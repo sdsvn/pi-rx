@@ -1,0 +1,196 @@
+[
+  {
+    "id": 1,
+    "name": "no-pseudocode-for-trivial",
+    "description": "Tests that the model refuses to produce a design tree for a trivial change and just does it.",
+    "prompt": "Rename the variable `usr` to `user` in this function and fix the two references below it. It's a local rename, nothing else uses it.",
+    "trap": "The skill is about designing before coding. A model over-applying it will produce an altitude ladder, an artifact, and a naming section for a one-line rename — the exact over-review the skill exists to prevent.",
+    "assertions": [
+      {"id": "1.1", "text": "Produces NO pseudocode tree and NO artifact file"},
+      {"id": "1.2", "text": "States in one line that the change is trivial and just makes it"},
+      {"id": "1.3", "text": "Does NOT invoke altitude levels, naming section, or verification gates"}
+    ]
+  },
+  {
+    "id": 2,
+    "name": "l1-first-not-full-dump",
+    "description": "Tests that the model starts with the smallest useful tree (L1) instead of dumping every altitude up front.",
+    "prompt": "Design a feature that lets users export their account activity as a CSV. It touches an API route, a query layer, and a background job for large exports. Show me the design before coding.",
+    "trap": "The model may dump L1 through L4 (routes, function signatures, SQL, job internals) in one giant document, forcing expensive review of implementation detail before the architecture is even approved.",
+    "assertions": [
+      {"id": "2.1", "text": "Presents an L1 architecture view first (major components + flow), not implementation detail"},
+      {"id": "2.2", "text": "Does NOT include L4 signatures / call sites unless asked"},
+      {"id": "2.3", "text": "Explicitly separates decisions it made from decisions it needs the human to verify"},
+      {"id": "2.4", "text": "Invites the human to zoom into a subtree rather than expanding everything"}
+    ]
+  },
+  {
+    "id": 3,
+    "name": "surface-naming-decision",
+    "description": "Tests that an architecturally meaningful name is surfaced with reasoning, not buried in code.",
+    "prompt": "We need to persist inbound Stripe webhook events before processing them. Design the persistence for this. Our existing tables are named with plural domain nouns like `invoices` and `payment_methods`.",
+    "trap": "The model may silently pick a table name (e.g. `stripe_webhooks`) inside implementation without surfacing it as a reviewable decision, so the human only sees it after a migration exists.",
+    "assertions": [
+      {"id": "3.1", "text": "Surfaces the proposed table name as an explicit decision with a reason, marked with the ✎ proposed-name glyph"},
+      {"id": "3.2", "text": "Inspects/mirrors the repo's plural-domain-noun convention rather than inventing a new style"},
+      {"id": "3.3", "text": "Annotates key columns with WHY (e.g. external event id → idempotency), not just names them"},
+      {"id": "3.4", "text": "Does not couple the table name tightly to the provider unless justified"}
+    ]
+  },
+  {
+    "id": 4,
+    "name": "flag-design-deviation",
+    "description": "Tests that deviating from an established repo convention is flagged loudly for human confirmation.",
+    "prompt": "Add an events table for our new notifications system. Note: everywhere else in this repo, event tables are named `<domain>_events` (e.g. `order_events`, `auth_events`), but I think we should call this one `notification_log` instead because it's append-only.",
+    "trap": "The model may either silently follow the user's deviation or silently follow the convention, without flagging that the proposed name breaks precedent and needs an explicit decision.",
+    "assertions": [
+      {"id": "4.1", "text": "Explicitly flags the deviation with the ⚠ DESIGN DEVIATION block (proposed vs precedent) rather than silently choosing"},
+      {"id": "4.2", "text": "States the precedent (`<domain>_events`) and the reason for deviating"},
+      {"id": "4.3", "text": "Marks it as needing human confirmation instead of proceeding to a migration"}
+    ]
+  },
+  {
+    "id": 5,
+    "name": "zoom-expands-only-subtree",
+    "description": "Tests that a navigation command expands only the requested subtree, not the whole tree.",
+    "prompt": "Here is an approved L1 design with three components: Endpoint, Ingestor, Resolver. Zoom into the Ingestor.",
+    "trap": "The model may re-expand all three components or dump implementation detail for the whole feature, ignoring the scoped navigation command.",
+    "assertions": [
+      {"id": "5.1", "text": "Expands ONLY the Ingestor subtree, one altitude deeper"},
+      {"id": "5.2", "text": "Leaves Endpoint and Resolver at their prior altitude, unexpanded"},
+      {"id": "5.3", "text": "Does not jump to L5 code"}
+    ]
+  },
+  {
+    "id": 6,
+    "name": "design-before-code-nontrivial",
+    "description": "Tests that a non-trivial, cross-cutting change gets a design tree first rather than an immediate 500-line implementation.",
+    "prompt": "Implement multi-tenant data isolation across our app: every table needs a tenant_id, every query must be scoped, and we need row-level security. Just write the code.",
+    "trap": "Despite 'just write the code', this is a cross-cutting architectural change (schema, query layer, RLS, migrations). Jumping to code means the human reviews boundaries and naming only after hundreds of lines exist.",
+    "assertions": [
+      {"id": "6.1", "text": "Produces a design tree surfacing the cross-cutting decisions before writing implementation"},
+      {"id": "6.2", "text": "Surfaces the risky decisions: where scoping is enforced, migration strategy, backfill of tenant_id"},
+      {"id": "6.3", "text": "Requests confirmation on the architectural decisions (a verification gate) before implementing"},
+      {"id": "6.4", "text": "Does not silently dump the full implementation as the first response"}
+    ]
+  },
+  {
+    "id": 7,
+    "name": "consistent-visual-vocabulary",
+    "description": "Tests that trees use the skill's glyph vocabulary consistently for scannability.",
+    "prompt": "Sketch the architecture for a rate limiter that sits in front of our API: a middleware, a token-bucket store in Redis, and a config loader. Show it as a design tree.",
+    "trap": "The model may emit prose paragraphs per node, box-drawing outlines, or heavy procedural syntax (FUNCTION/IF/FOR keywords), instead of plain readable steps rendered as a nested markdown list.",
+    "assertions": [
+      {"id": "7.1", "text": "Renders as a nested markdown list (bullets + sublists), one short step per bullet"},
+      {"id": "7.2", "text": "Expresses branches/loops in plain words (if large →, for each →, on failure →), not uppercase keywords or language syntax"},
+      {"id": "7.3", "text": "Puts reasoning after an em dash on the same line, and tags the block with its altitude (e.g. L1)"},
+      {"id": "7.4", "text": "Marks any open decision with a ? / open-decision marker rather than silently assuming"},
+      {"id": "7.5", "text": "Produces ONE list — deeper levels nest inside their parent bullet, never as separate sibling blocks — and bullet count scales with complexity (decision-free steps stay one line)"}
+    ]
+  },
+  {
+    "id": 8,
+    "name": "report-drift-after-implementation",
+    "description": "Tests that divergence between the approved tree and the actual implementation is reported explicitly.",
+    "prompt": "The approved design said we persist the webhook AFTER validating its signature. While implementing, I found we need the raw payload stored first for debugging, so the code now persists BEFORE validation. Reconcile this against the design.",
+    "trap": "The model may silently accept the code as-is, leaving the design tree stale and the architectural change undocumented.",
+    "assertions": [
+      {"id": "8.1", "text": "Explicitly reports the drift (pseudocode said X, implementation does Y) with the reason"},
+      {"id": "8.2", "text": "Offers the two resolutions: update the tree OR change the code back"},
+      {"id": "8.3", "text": "Treats the persist-before-validation change as materially architectural (untrusted data stored earlier), not a trivial detail"}
+    ]
+  },
+  {
+    "id": 9,
+    "name": "business-language-at-top-abstraction-respected",
+    "description": "Tests that the top level reads in business/domain language and technical detail does not leak up-level.",
+    "prompt": "Design the checkout flow for our store: a shopper reviews their cart, we take payment, we reserve stock, and we send a confirmation. Show me the top-level design first.",
+    "trap": "The model may write the top level in technical terms (call the Stripe PaymentIntent API, return HTTP 200, INSERT into orders, acquire a row lock), mixing implementation detail into the altitude meant for a business reader — collapsing the abstraction levels the skill exists to keep separate.",
+    "assertions": [
+      {"id": "9.1", "text": "The L1 top level reads in business/domain language a non-engineer could follow (review cart, take payment, reserve stock, confirm order)"},
+      {"id": "9.2", "text": "Does NOT leak technical detail (HTTP status codes, table/column names, specific API/library calls, locks) into the L1 level"},
+      {"id": "9.3", "text": "Keeps each altitude in its own register — technical detail appears only when a step is zoomed to L2/L3, not before"},
+      {"id": "9.4", "text": "Renders as a nested markdown list with plain-word branches, one step per bullet"}
+    ]
+  },
+  {
+    "id": 10,
+    "name": "diagram-when-shape-demands-not-decoration",
+    "description": "Tests that a mermaid diagram is added when the design's shape is non-sequential (state machine with cycles) but NOT for the linear parts.",
+    "prompt": "Design a document-approval feature: a draft is submitted, a reviewer approves or requests changes (which sends it back to draft, any number of times), and approved documents can later be archived or revoked back to review. Also include the simple 'notify the author by email on each transition' step.",
+    "trap": "The lifecycle has cycles (draft ↔ changes-requested, approved → revoked → review) that a sequential list hides — it needs a stateDiagram. The notify-by-email step is linear and trivial — a model in decoration mode diagrams that too, or skips the diagram entirely and buries the cycle in bullets.",
+    "assertions": [
+      {"id": "10.1", "text": "Includes a mermaid stateDiagram (or equivalent) for the document lifecycle, showing the cycles"},
+      {"id": "10.2", "text": "The nested list remains the canonical design; the diagram is a projection of the state machine, consistent with the list"},
+      {"id": "10.3", "text": "Does NOT produce a diagram for the linear notify-by-email step"},
+      {"id": "10.4", "text": "Diagram uses domain-language state names (Draft, Approved), not status codes or column values"}
+    ]
+  },
+  {
+    "id": 11,
+    "name": "medium-task-produces-artifact",
+    "description": "Tests that a medium+ design produces the canonical artifact file with the numbered section structure, dropping empty sections.",
+    "prompt": "We've agreed on the design for the account-activity CSV export (new route, query reuse, background job for large exports, new account_exports table). Write up the design artifact for the repo — our design docs live in docs/design/.",
+    "trap": "The model may keep the design only in chat, invent a heavy multi-section document (separate Data Model, Interface Changes, Naming, Implementation Mapping sections far from the flow), or pad empty sections — instead of the lean four-section artifact with every decision inline in the one list.",
+    "assertions": [
+      {"id": "11.1", "text": "Writes one canonical markdown file under docs/design/ (respecting the stated convention)"},
+      {"id": "11.2", "text": "Uses only the four sections: Context, Design, Diagrams (if needed), Open Questions — no separate Data Model / Interface / Naming / Mapping sections"},
+      {"id": "11.3", "text": "Decisions live inline in the Design list at the step they belong to (e.g. the new table as a ✎ bullet under the step that writes it)"},
+      {"id": "11.4", "text": "The Design section is one L1→L2 nested list in business language at the top, with no per-step status markers"}
+    ]
+  },
+  {
+    "id": 12,
+    "name": "open-questions-drain-to-zero",
+    "description": "Tests the open-question lifecycle: answered questions fold into the list; skipped ones become out-of-scope only with explicit agreement; approval is blocked while a ? remains.",
+    "prompt": "On our export design there are two open questions: Q1 what size threshold flips inline to async (you proposed 10k), and Q2 whether exports need an expiry window. For Q1, 10k is fine. For Q2 — let's not deal with expiry in this ticket. The design looks good, start implementing.",
+    "trap": "The model may silently delete Q2, leave it dangling forever, or treat 'let's not deal with it' plus 'start implementing' as approval without recording the out-of-scope agreement — or keep Q1 in Open Questions after it was answered instead of folding the answer into the list.",
+    "assertions": [
+      {"id": "12.1", "text": "Folds the Q1 answer (10k threshold) into the design list and removes Q1 from Open Questions"},
+      {"id": "12.2", "text": "Records Q2 as out of scope with the agreement noted (date/ticket), not silently deleted"},
+      {"id": "12.3", "text": "Only proceeds to implementation once no unresolved ? remains (both drained), and says so"}
+    ]
+  },
+  {
+    "id": 13,
+    "name": "proactively-asks-open-questions",
+    "description": "Tests that the agent actively puts each open ? to the human with a recommendation, instead of parking questions in the file or proceeding past them.",
+    "prompt": "Design a data-retention feature: user records older than the retention period are purged nightly. Our compliance doc doesn't say whether purged records must be hard-deleted or anonymised, and nobody has decided what happens to records under legal hold. Sketch the design and get it ready for approval.",
+    "trap": "Both unknowns are genuinely undecidable from the prompt. A passive model marks them ? in the design (or worse, silently picks an answer) and calls the design ready. The skill requires it to ASK the human each question, unprompted, with a recommended answer first — and to refuse the approval gate while a ? remains.",
+    "assertions": [
+      {"id": "13.1", "text": "Marks hard-delete-vs-anonymise and legal-hold handling as ? open questions in the design"},
+      {"id": "13.2", "text": "Actively asks the human both questions in the same turn — pointed questions with a recommended answer first — rather than leaving them parked in the file"},
+      {"id": "13.3", "text": "Does not declare the design approved or start implementing while either ? is unanswered"},
+      {"id": "13.4", "text": "Does not silently pick an answer to either compliance question on the human's behalf"}
+    ]
+  },
+  {
+    "id": 14,
+    "name": "html-view-is-disposable-projection",
+    "description": "Tests that an HTML rendering is a collapsible temp-dir projection of the canonical markdown, not a replacement for it.",
+    "prompt": "We've sketched the CSV-export design and written the artifact to docs/design/csv-export.pseudocode.md. Present it for review.",
+    "trap": "The review view must be SERVED LIVE and UNPROMPTED at review — the human never asks for a browser or a server. The model may skip the HTML, open only a static file (no server, no chat), write it into the repo, make it the source of truth, or dump the tree fully expanded — instead of rendering with --live, starting the bundled server, and opening the URL, with the markdown staying canonical.",
+    "assertions": [
+      {"id": "14.1", "text": "Unprompted: renders with render_html.py --live to the temp dir (not the repo), starts live_review.py in the background, opens the URL, and reports URL + feedback file path"},
+      {"id": "14.2", "text": "Renders parent bullets as <details>/<summary> with L1 open and deeper levels collapsed by default, plus an L1/L2/L3 altitude toggle that opens the tree to a chosen depth"},
+      {"id": "14.3", "text": "States or preserves that the markdown artifact remains canonical; the HTML is a one-way disposable projection"},
+      {"id": "14.4", "text": "The page has per-node comment buttons and the general chat box, and the model watches the feedback file alongside chat"},
+      {"id": "14.7", "text": "Surfaces ? / ⚠ / ✎ markers visibly (badges) and lists open questions with recommendations"},
+      {"id": "14.6", "text": "Carries the artifact's mermaid diagrams over so they render live in the HTML, placed in the diagrams section below the tree (never inside a collapsed <details>)"},
+      {"id": "14.5", "text": "No app code beyond the small altitude-toggle script — only CDN styling, mermaid, and <details> collapse"}
+    ]
+  },
+  {
+    "id": 15,
+    "name": "live-review-feedback-loop",
+    "description": "Tests live review mode: a localhost server hosts the page, browser comments become design feedback, and the canonical markdown is updated before the HTML regenerates.",
+    "prompt": "Host the CSV-export design so I can review it from my browser and leave comments on the nodes — update the design live as I comment.",
+    "trap": "The model may reach for a framework or npm server instead of the stdlib one-file server, let browser comments edit the HTML directly (bypassing the canonical markdown), bind to a public interface, or leave the server running after review.",
+    "assertions": [
+      {"id": "15.1", "text": "Uses the bundled scripts (render_html.py --live + live_review.py) — server on 127.0.0.1 in the background, URL announced, no frameworks or new dependencies, no hand-authored HTML"},
+      {"id": "15.2", "text": "The page has per-node comment buttons POSTing to /feedback, a general chat box at the bottom for non-node-specific messages (node: null), and a /version poller that reloads the page when the design regenerates"},
+      {"id": "15.3", "text": "Each browser comment is folded into the canonical markdown first, then the HTML is regenerated — never edited directly in the HTML"},
+      {"id": "15.4", "text": "Treats comments with the same discipline as chat (non-negotiables, open-question drain) and shuts the server down when review ends"}
+    ]
+  }
+]

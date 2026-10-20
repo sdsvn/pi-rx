@@ -1,0 +1,9 @@
+{
+  "name": "pi-rx",
+  "version": "0.1.0",
+  "description": "Gated Rx workflow: phase state machine, guarded transitions, and a live phase panel.",
+  "type": "module",
+  "omp": {
+    "extensions": ["./src/index.ts"]
+  }
+}
