@@ -71,7 +71,7 @@ flowchart LR
 ```
 
 > [!NOTE]
-> Rx also works best with a handful of tools (Co-Review, Herdr, ntfy.sh and others). **None of them are
+> Rx also works best with a handful of tools ([Co-Review](https://sdsvn.github.io/co-review/), [Herdr](https://herdr.dev/), [ntfy.sh](https://ntfy.sh) and others). **None of them are
 > required**: without each one, Rx falls back to something simpler. See [Works best with](#-works-best-with).
 
 ## ✨ What you get
@@ -119,7 +119,7 @@ skills:
 ## 🔄 How a ticket flows
 
 **1 · Start.** Creates `.worktrees/ENG-1234` on branch `ENG-1234`, reads the ticket, and writes a test
-plan, a pseudocode design, and (with `openspec`) spec deltas. It writes no code.
+plan, a pseudocode design, and (with [OpenSpec](https://openspec.dev/)) spec deltas. It writes no code.
 
 **2 · Review.** The design opens for you as soon as it's ready:
 
@@ -133,7 +133,7 @@ updates live. *Request changes* (or `/rx-reject ENG-1234 "why"`) starts another 
 **3 · Implement.** *Approve* (or `/rx-approve`) implements against the approved design and runs the
 verification loop until it's green.
 
-**4 · Ship.** `/rx-pr` opens the pull request. Inside Herdr, a watcher then keeps an eye on it: it fixes
+**4 · Ship.** `/rx-pr` opens the pull request. Inside [Herdr](https://herdr.dev/), a watcher then keeps an eye on it: it fixes
 red CI and trivial comments itself, answers threads, and sends real changes back to the design gate
 with `/rx-rework`.
 
@@ -149,11 +149,11 @@ All optional. Here's what each one adds and what you get without it.
 
 | | What it adds | Without it |
 |---|---|---|
-| 🔍 **[Co-Review](https://github.com/sdsvn/co-review)** | Design review in a native app, with threaded comments the agent replies to. | A local HTML review page (needs `python3`). Same gate, but no reply threads, so the agent answers in chat. |
-| 🪟 **Herdr** + `jq` | A workspace per ticket, plus a PR watcher that fixes CI and trivial comments on its own. | No watcher. You check the PR and run `/rx-rework` or `/rx-cleanup` yourself. |
+| 🔍 **[Co-Review](https://sdsvn.github.io/co-review/)** | Design review in a native app, with threaded comments the agent replies to. | A local HTML review page (needs `python3`). Same gate, but no reply threads, so the agent answers in chat. |
+| 🪟 **[Herdr](https://herdr.dev/)** + `jq` | A workspace per ticket, plus a PR watcher that fixes CI and trivial comments on its own. | No watcher. You check the PR and run `/rx-rework` or `/rx-cleanup` yourself. |
 | 📱 **[ntfy.sh](https://ntfy.sh)** via pi-notify | Phone notifications when Rx is waiting on you. Reply "approve" from your phone. | You check back in the terminal. |
 | 📋 **Linear MCP** | `/rx ENG-1234` and Linear URLs read the ticket directly. | Use plain-text tasks: `/rx add retry to the webhook sender`. |
-| 📜 **`openspec`** | Durable spec deltas per change, archived on merge. | The spec step is skipped. |
+| 📜 **[OpenSpec](https://openspec.dev/)** | Durable spec deltas per change, archived on merge. | The spec step is skipped. |
 
 > [!IMPORTANT]
 > Install Co-Review for the best review experience. Rx tells you when it's falling back to the HTML page.

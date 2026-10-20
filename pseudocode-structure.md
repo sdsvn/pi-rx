@@ -1,6 +1,6 @@
 # Pseudocode artifact structure (rx render contract)
 
-The `.pseudocode.md` design artifact is reviewed live in [Co-Review](https://github.com/sdsvn/co-review),
+The `.pseudocode.md` design artifact is reviewed live in [Co-Review](https://sdsvn.github.io/co-review/),
 whose design-doc renderer recognizes **four `## ` sections** — Context, Design, Diagrams, Open
 Questions (its `docs/design-docs.md` format). Anything outside them renders only as plain Markdown, not
 as the reviewable design tree, so rx keeps the strict contract: any other heading, or a parenthetical

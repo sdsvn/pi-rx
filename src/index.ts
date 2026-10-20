@@ -214,7 +214,7 @@ export class CoReview {
     const proc = spawn(bin, ["mcp", this.root], { stdio: ["pipe", "pipe", "pipe"] });
     this.proc = proc;
     proc.stderr?.on("data", (d) => (this.stderr = (this.stderr + d).slice(-2000)));
-    proc.on("error", (e) => this.drop(proc, new Error(`'${bin} mcp' did not start: ${e.message} — install Co-Review (https://github.com/sdsvn/co-review) or set RX_REVIEW_BIN`)));
+    proc.on("error", (e) => this.drop(proc, new Error(`'${bin} mcp' did not start: ${e.message} — install Co-Review (https://sdsvn.github.io/co-review/) or set RX_REVIEW_BIN`)));
     proc.on("exit", (code) => this.drop(proc, new Error(`co-review mcp ended (exit ${code})${this.stderr.trim() ? `: ${this.stderr.trim()}` : ""}`)));
     let buf = "";
     proc.stdout?.on("data", (d) => {
@@ -2666,7 +2666,7 @@ export default function piRx(pi: ExtensionAPI) {
       if (ctx.hasUI)
         ctx.ui.notify(
           `rx-review: Co-Review isn't installed and the pseudocode-design skill wasn't found for the HTML fallback — ` +
-            `install Co-Review (https://github.com/sdsvn/co-review) or set RX_PSEUDOCODE_SKILL`,
+            `install Co-Review (https://sdsvn.github.io/co-review/) or set RX_PSEUDOCODE_SKILL`,
           "error",
         );
       return "rx-review: Co-Review isn't installed and the pseudocode-design skill wasn't found for the HTML fallback";
@@ -2757,10 +2757,10 @@ export default function piRx(pi: ExtensionAPI) {
     if (ctx.hasUI)
       ctx.ui.notify(
         `rx-review ${ticket} — open ${url} to review the design (Co-Review isn't installed, so this is the HTML page). ` +
-          `Install Co-Review for threaded review with replies: https://github.com/sdsvn/co-review`,
+          `Install Co-Review for threaded review with replies: https://sdsvn.github.io/co-review/`,
         "info",
       );
-    return `rx-review ${ticket}: HTML review page at ${url} (Co-Review isn't installed — recommend installing it: https://github.com/sdsvn/co-review)`;
+    return `rx-review ${ticket}: HTML review page at ${url} (Co-Review isn't installed — recommend installing it: https://sdsvn.github.io/co-review/)`;
   }
 
   pi.registerCommand("rx-review", {
