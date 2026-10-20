@@ -22,12 +22,13 @@
 
 </div>
 
-**Rx is a workflow extension for the [pi](https://pi.dev) and omp coding agents.** Give it a ticket
-(Linear, Jira, GitHub, GitLab) or just describe a task, and the agent takes it all the way to a
-merged pull request: it plans the tests, writes a short design, **waits for you to approve it**,
-then implements, opens the PR, and keeps an eye on CI and review comments until it merges.
+**Rx is a workflow extension for the [pi](https://pi.dev) and omp coding agents, built for one-shot
+development.** Give it a ticket (Linear, Jira, GitHub, GitLab) or just describe a task, and the agent
+takes it all the way to a merged pull request:
 
-You stay in charge of *what* gets built. The agent handles the rest.
+**🧪 Test-First Planning** → **📐 Design Blueprint** → **🚦 Design Gate** → **🎯 One-Shot Build** → **🛰️ PR Watch**
+
+You stay in charge of *what* gets built at the gate. The agent handles the rest.
 
 ## 🚀 Get started
 
@@ -74,18 +75,18 @@ your approval, then code. It isn't a loose toolkit you assemble yourself.
 
 ## 🩺 What it does
 
-Rx sets up an isolated worktree, writes a test plan and a **pseudocode design**, and puts
-that design in front of you. Nothing gets implemented until you approve it. After that it writes the
-code, opens the PR, and watches CI and review comments until the PR merges.
+Rx sets up an isolated worktree, plans the tests, and writes a **Design Blueprint** (plain-language
+pseudocode), then stops at the **Design Gate**. Nothing gets implemented until you approve it. After
+that comes the **One-Shot Build**, the PR, and **PR Watch** on CI and review comments until it merges.
 
 ```mermaid
 flowchart LR
-    T([🎫 ticket]) --> S[design<br/>test plan + pseudocode]
-    S --> G{{👤 you review}}
+    T([🎫 ticket]) --> S[🧪 Test-First Planning<br/>📐 Design Blueprint]
+    S --> G{{🚦 Design Gate<br/>you review}}
     G -- request changes --> S
-    G -- approve --> I[implement<br/>until green]
+    G -- approve --> I[🎯 One-Shot Build<br/>until green]
     I --> P[open PR]
-    P --> W[watch CI<br/>+ comments]
+    P --> W[🛰️ PR Watch<br/>CI + comments]
     W -- real rework --> G
     W -- merged --> C([✅ cleaned up])
 
@@ -100,19 +101,21 @@ flowchart LR
 
 |   |   |
 |---|---|
-| 🧭 **You review the design, not just the diff** | The agent stops at a gate with a plain-language pseudocode tree. Code happens only after you approve it. |
-| 🔒 **The gate is real** | Every phase change goes through one guarded tool that refuses invalid jumps, so the agent can't skip review. |
+| 🎯 **One-shot development** | The plan is settled before any code exists, so the build lands in one pass instead of round after round of "not like that". |
+| 🧪 **Test-First Planning** | The agent decides how the change will be proven before it designs it, so it knows the edge cases and what "done" means up front. |
+| 🚦 **A real Design Gate** | You review a plain-language Design Blueprint, not just the diff. Every phase change goes through one guarded tool that refuses invalid jumps, so the agent can't skip the gate. |
 | 🧹 **Nothing lands in your project** | State, design docs, and specs live under `~/.claude/workflow/`, keyed per repository. Rx never writes to your repo. |
 | 🔌 **Works with your tracker** | Linear, Jira, GitHub and GitLab built in. Name yours in one line of config, or teach Rx a new one with a short markdown file. |
-| 📈 **It learns from your corrections** | Every rejection, rework, and requested change is logged with its reason. `/rx-retro` turns patterns into fixes. |
+| 📈 **Learning Loop** | Every rejection, rework, and requested change is logged with its reason. `/rx-retro` turns patterns into workflow fixes. |
 | 🪶 **Tiny footprint** | One TypeScript file plus markdown playbooks. No dependencies, no build: pi and omp run the source. |
 
 ## 🔄 How a ticket flows
 
-**1 · Start.** Creates `.worktrees/ENG-1234` on branch `ENG-1234`, reads the ticket, and writes a test
-plan, a pseudocode design, and (with [OpenSpec](https://openspec.dev/)) spec deltas. It writes no code.
+**1 · 🧪 Test-First Planning.** Creates `.worktrees/ENG-1234` on branch `ENG-1234`, reads the ticket, and writes a test
+plan, then a **Design Blueprint** (pseudocode) and, with [OpenSpec](https://openspec.dev/), spec deltas.
+It writes no code.
 
-**2 · Review.** The design opens for you as soon as it's ready:
+**2 · 🚦 Design Gate.** The blueprint opens for you as soon as it's ready:
 
 - **In Co-Review**, if it's installed: comment on any step, get answers in the thread, and Submit with
   *Approve* or *Request changes*.
@@ -121,14 +124,14 @@ plan, a pseudocode design, and (with [OpenSpec](https://openspec.dev/)) spec del
 Your comments go straight to the agent. It answers questions and edits the design, and the review
 updates live. *Request changes* (or `/rx-reject ENG-1234 "why"`) starts another round.
 
-**3 · Implement.** *Approve* (or `/rx-approve`) implements against the approved design and runs the
+**3 · 🎯 One-Shot Build.** *Approve* (or `/rx-approve`) implements against the approved design and runs the
 verification loop until it's green.
 
-**4 · Ship.** `/rx-pr` opens the pull request. Inside [Herdr](https://herdr.dev/), a watcher then keeps an eye on it: it fixes
-red CI and trivial comments itself, answers threads, and sends real changes back to the design gate
+**4 · 🛰️ PR Watch.** `/rx-pr` opens the pull request. Inside [Herdr](https://herdr.dev/), a watcher then keeps an eye on it: it fixes
+red CI and trivial comments itself, answers threads, and sends real changes back to the Design Gate
 with `/rx-rework`.
 
-**5 · Clean up.** Once merged, `/rx-cleanup` removes the worktree, branch, watcher, and artifacts, and
+**5 · 🧹 Clean up.** Once merged, `/rx-cleanup` removes the worktree, branch, watcher, and artifacts, and
 archives the spec deltas.
 
 > [!TIP]
