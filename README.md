@@ -22,6 +22,13 @@
 
 </div>
 
+**Rx is a workflow extension for the [pi](https://pi.dev) and omp coding agents.** Give it a ticket
+(Linear, Jira, GitHub, GitLab) or just describe a task, and the agent takes it all the way to a
+merged pull request: it plans the tests, writes a short design, **waits for you to approve it**,
+then implements, opens the PR, and keeps an eye on CI and review comments until it merges.
+
+You stay in charge of *what* gets built. The agent handles the rest.
+
 ## 🚀 Get started
 
 ```bash
