@@ -81,7 +81,8 @@ flowchart LR
 |---|---|
 | 🧭 **You review the design, not just the diff** | The agent stops at a gate with a plain-language pseudocode tree. Code happens only after you approve it. |
 | 🔒 **The gate is real** | Every phase change goes through one guarded tool that refuses invalid jumps, so the agent can't skip review. |
-| 🧹 **Nothing lands in your project** | State, design docs, and specs live under `~/.claude/workflow/`, keyed per repository. |
+| 🧹 **Nothing lands in your project** | State, design docs, and specs live under `~/.claude/workflow/`, keyed per repository. Rx never writes to your repo. |
+| 🔌 **Works with your tracker** | Linear, Jira, GitHub and GitLab built in. Name yours in one line of config, or teach Rx a new one with a short markdown file. |
 | 📈 **It learns from your corrections** | Every rejection, rework, and requested change is logged with its reason. `/rx-retro` turns patterns into fixes. |
 | 🪶 **Tiny footprint** | One TypeScript file plus markdown playbooks. No dependencies, no build: omp runs the source. |
 
@@ -255,7 +256,7 @@ replaces it, so you can also rewrite how Linear tickets are fetched.
 
 ## 🗂️ Where things live
 
-Nothing goes into your project. Everything is under `~/.claude/workflow/`, per repository
+Rx never writes to your project. Everything it keeps is under `~/.claude/workflow/`, per repository
 (`<repo-key>` = repo name + a checksum of its path):
 
 ```text
@@ -267,12 +268,22 @@ Nothing goes into your project. Everything is under `~/.claude/workflow/`, per r
 └── DECISIONS.md                       standing objections from /rx-reject
 ```
 
+The only Rx files in a repo are ones you choose to commit: `.rx/config.yml` and `.rx/sources/`
+(see [Ticket sources](#-ticket-sources)).
+
 <details>
 <summary><b>⚙️ Configuration</b></summary>
 
 <br>
 
-No config file. Optional environment variables:
+Ticketing settings live in `.rx/config.yml` (repo) or `~/.config/rx/config.yml` (you):
+
+| Key | Effect |
+|---|---|
+| `tickets` | Your default ticketing system; bare ticket ids go to it. Default `linear`. |
+| `ticket_shape` | Regex for what a bare ticket id looks like. Default: `KEY-123`. |
+
+Optional environment variables:
 
 | Variable | Effect |
 |---|---|
@@ -288,6 +299,7 @@ No config file. Optional environment variables:
 
 - `src/index.ts` is the extension: the state machine, the `rx_*` tools, the review, and the panel.
 - [`stages/`](./stages) holds the playbooks the agent follows at each step.
+- [`sources/`](./sources) holds the bundled ticket sources.
 - [`workflow/`](./workflow) holds the docs those playbooks read.
 
 omp runs the source directly, so restart or reload omp to pick up an edit.
