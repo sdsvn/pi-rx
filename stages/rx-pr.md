@@ -21,7 +21,9 @@ bash for real work (git, `gh`); OpenSpec only via `rx_openspec` (it adds `--stor
 2. Reproduce the template's headings verbatim (emoji, order). Never rename, merge, or invent a
    heading; `(optional)` sections omitted only when empty; extra material (seed, curl, logs) goes
    inside the relevant section.
-3. Content per the style doc: `## 🔖 Title` = `$1: concise description` (also the `rx_pr` title);
+3. Content per the style doc: `## 🔖 Title` = `$1: concise description` (also the `rx_pr` title) —
+   for a free-text task (state `source: text`) use a conventional prefix instead (`feat: …`, `fix: …`),
+   never the task id;
    Test Plan = the real verification run (recorded `test_plan` + §3 of `/rx-approve`), never the CI
    baseline; Additional Context summarizes the OpenSpec deltas (`rx_openspec op: show`) when a change
    exists. Terse — median body ~200 chars.

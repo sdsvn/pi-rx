@@ -108,6 +108,13 @@ type RxState = {
   herdr_watch_tab?: string | null; // Herdr tab running the PR-watcher loop; closed at /rx-cleanup
   herdr_watch_pane?: string | null; // the watcher loop's pane (aliveness check for reconciliation)
   design_rev?: number; // count of pseudocode revisions at the approval gate
+  // Where the work came from and what it is, persisted at intake so resume, labels and the PR title never
+  // depend on re-reading the ticket: `source` = "text" for a free-text task (else the ticket system),
+  // `source_ref` = what the user typed, `title`/`requirement` = the story as fetched (or the text itself).
+  source?: string | null;
+  source_ref?: string | null;
+  title?: string | null;
+  requirement?: string | null;
   // omp session bound to this ticket (plugin-managed). A fan-out-spawned Space binds this field to its
   // own fresh session and shows status; an interactive /rx on a ticket bound elsewhere offers to reopen it.
   session_id?: string | null;
@@ -1129,8 +1136,8 @@ function readReviewState(dir: string, ticket: string): { round: number; verdict:
 
 const VALID_TICKET = /^(?:[A-Za-z0-9_]+-[0-9]+|gh-[0-9]+|#[0-9]+|(?!\.+\/)[a-zA-Z0-9_.]+\/(?!\.+#)[a-zA-Z0-9_.]+#\d+)$/;
 /** Any pipeline id: Linear/Jira ticket (ENG-1234, PROJ-56), GitHub issue (gh-123, #123),
- *  or ad-hoc slug (rx-improve-logging, task-foo-bar, flow-abc). */
-const PIPELINE_ID = /^(?:[A-Za-z0-9_]+-[0-9]+|gh-[0-9]+|#[0-9]+|(?!\.+\/)[a-zA-Z0-9_.]+\/(?!\.+#)[a-zA-Z0-9_.]+#\d+|(?:rx|task|flow)-[a-z0-9][a-z0-9-]*)$/;
+ *  or a free-text task's kebab-case id (add-retry-webhook-sender; older ones carry task-/rx-/flow-). */
+const PIPELINE_ID = /^(?:[A-Za-z0-9_]+-[0-9]+|gh-[0-9]+|#[0-9]+|(?!\.+\/)[a-zA-Z0-9_.]+\/(?!\.+#)[a-zA-Z0-9_.]+#\d+|[a-z0-9][a-z0-9-]{0,47})$/;
 
 /** Resolve the first arg to a ticket/task id: Linear/Jira (ENG-1234), GitHub (#123, gh-123),
  *  Linear URL (`https://linear.app/.../issue/ENG-6182/slug`), or GitHub issue URL
@@ -1149,15 +1156,73 @@ function extractTicket(tok: string): string {
   return "";
 }
 
-/** Ad-hoc pipeline id from a free-text task ("improve logging" → "task-improve-logging"). */
-function slugId(text: string): string {
-  const s = text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-+|-+$)/g, "")
-    .slice(0, 48)
-    .replace(/-+$/, "");
-  return `task-${s || "work"}`;
+/** `/rx <word>` runs the stage instead of starting a task called "<word>"; the NOTE_STAGES also take
+ *  trailing notes (`/rx reject too broad`). `improve`/`start` are left out — they read as task text. */
+const STAGE_WORDS = new Set(["approve", "reject", "pr", "cleanup", "abort", "rework", "status", "review", "retro"]);
+const NOTE_STAGES = new Set(["reject", "rework", "abort"]);
+
+/** Filler words left out of a free-text task's id and ignored when comparing two task texts. */
+const SLUG_STOPWORDS = new Set(
+  "a an the to of for and or in on at by with from into onto is are be it its this that these those please so as".split(" "),
+);
+
+/** A task text's meaningful words, lowercased (all words when every one is filler). */
+function taskWords(text: string): string[] {
+  const words = text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean);
+  const kept = words.filter((w) => !SLUG_STOPWORDS.has(w));
+  return kept.length ? kept : words;
+}
+
+/** Short, readable id for a free-text task — its first four meaningful words, kebab-case, no prefix
+ *  ("add retry to the webhook sender" → "add-retry-webhook-sender"). It names the branch, the worktree
+ *  and the Space, so it stays short. Pure; tested in demo(). */
+export function slugId(text: string): string {
+  return taskWords(text).slice(0, 4).join("-").slice(0, 40).replace(/-+$/, "") || "task";
+}
+
+/** Two free-text tasks are the same task when their meaningful words match (rewording filler —
+ *  "the", "to" — doesn't start a duplicate pipeline). Pure; tested in demo(). */
+export function sameTask(a: string, b: string): boolean {
+  return taskWords(a).join(" ") === taskWords(b).join(" ");
+}
+
+/** The id for a free-text task in this repo: an active pipeline (or a start that was interrupted before
+ *  its state existed) for the same task is reused; otherwise the first free id of `slug`, `slug-2`, …
+ *  (an id is never reused for a different or finished task). */
+function textTaskId(dir: string, text: string): { id: string; existing: boolean } {
+  const base = slugId(text);
+  const states = new Map(readStates(dir).map((s) => [s.ticket, s]));
+  for (let n = 1; ; n++) {
+    const id = n === 1 ? base : `${base}-${n}`;
+    const st = states.get(id);
+    if (!st) {
+      const pending = readIntake(dir, id);
+      if (!pending || sameTask(pending.requirement ?? pending.source_ref, text)) return { id, existing: false };
+      continue;
+    }
+    if (st && isActive(st) && sameTask(st.requirement ?? st.source_ref ?? "", text)) return { id, existing: true };
+  }
+}
+
+/** What the user asked for, recorded by the dispatcher before /rx-start runs and folded into the new
+ *  state by rx_init — so a free-text requirement is never lost to an interrupted start. */
+type Intake = { source: string; source_ref: string; requirement?: string };
+
+function intakePath(dir: string, ticket: string): string {
+  return path.join(dir, `${ticket}.intake`);
+}
+
+function writeIntake(dir: string, ticket: string, intake: Intake): void {
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(intakePath(dir, ticket), JSON.stringify(intake));
+}
+
+function readIntake(dir: string, ticket: string): Intake | null {
+  try {
+    return JSON.parse(fs.readFileSync(intakePath(dir, ticket), "utf8")) as Intake;
+  } catch {
+    return null;
+  }
 }
 
 /** Best-effort cross-process mutex so two panes racing a bare `/rx` fan-out at the same instant
@@ -1538,7 +1603,7 @@ export default function piRx(pi: ExtensionAPI) {
     label: "Rx Init",
     description:
       "Create the state file for a new pipeline at phase=started. Call once in /rx-start after the " +
-      "worktree exists. ticket is the canonical id (ENG-1234 or an ad-hoc rx-<slug>).",
+      "worktree exists. ticket is the canonical id (ENG-1234, or a free-text task id like add-retry-webhook-sender). Folds in what the user asked for (source, requirement) recorded at /rx.",
     parameters: z.object({
       ticket: z.string().describe("Canonical pipeline id."),
       branch: z.string().describe("Git branch (usually the ticket id)."),
@@ -1552,7 +1617,16 @@ export default function piRx(pi: ExtensionAPI) {
       if (!dir) return { content: [{ type: "text", text: "rx: not inside a git repo." }], isError: true };
       if (fs.existsSync(statePath(dir, params.ticket)))
         return { content: [{ type: "text", text: `rx: pipeline already exists for ${params.ticket}.` }], isError: true };
-      const s = initState(dir, params.ticket, params.branch, params.worktree);
+      let s = initState(dir, params.ticket, params.branch, params.worktree);
+      const intake = readIntake(dir, params.ticket);
+      if (intake) {
+        s = setFields(dir, params.ticket, {
+          source: intake.source,
+          source_ref: intake.source_ref,
+          ...(intake.requirement ? { requirement: intake.requirement } : {}),
+        });
+        fs.rmSync(intakePath(dir, params.ticket), { force: true });
+      }
       return { content: [{ type: "text", text: `rx: initialized ${params.ticket} (phase started).` }], details: { state: s } };
     },
   });
@@ -1567,7 +1641,7 @@ export default function piRx(pi: ExtensionAPI) {
       "ensures .worktrees/ is git-ignored (adds + commits if not), and is idempotent (reuses a matching " +
       "worktree, refuses a conflicting branch). Returns the absolute worktree path + branch to hand to " +
       "rx_init. Call in /rx-start after rx_ground.",
-    parameters: z.object({ ticket: z.string().describe("Canonical pipeline id (ENG-1234 or rx-<slug>).") }),
+    parameters: z.object({ ticket: z.string().describe("Canonical pipeline id (ENG-1234 or a free-text task id).") }),
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
       const { ticket } = rawParams as { ticket: string };
       if (!PIPELINE_ID.test(ticket)) return { content: [{ type: "text", text: `rx: invalid ticket '${ticket}'.` }], isError: true };
@@ -2249,15 +2323,28 @@ export default function piRx(pi: ExtensionAPI) {
       //   /rx                      → drive the active ticket
       const raw = args.trim();
       const toks = raw.split(/\s+/).filter(Boolean);
-      let ticket = extractTicket(toks[0] ?? "");
+      // A stage word runs that stage on this pane's ticket instead of starting a task named after it:
+      // `/rx approve`, `/rx status`, `/rx reject too broad`.
+      const word = (toks[0] ?? "").toLowerCase();
+      if (STAGE_WORDS.has(word) && (toks.length === 1 || NOTE_STAGES.has(word))) {
+        await runStage(word, toks.slice(1).join(" "), dir, ctx);
+        return;
+      }
+      // An id this repo already tracks wins over every other reading (free-text ids look like plain words).
+      let ticket = toks[0] && active.some((s) => s.ticket === toks[0]) ? toks[0] : extractTicket(toks[0] ?? "");
       let note = "";
-      let startDesc = ""; // ad-hoc: the free-text requirement handed to rx-start as $2
+      let startDesc = ""; // free text: the requirement handed to rx-start as $2
       if (ticket) {
         toks.shift();
         note = toks.join(" ");
       } else if (raw) {
-        ticket = slugId(raw); // free text → ad-hoc id; drive it if it already exists
-        startDesc = raw;
+        // Free text → a short id; the same task typed again (filler words aside) drives the existing one.
+        const t = textTaskId(dir, raw);
+        ticket = t.id;
+        if (!t.existing) {
+          writeIntake(dir, ticket, { source: "text", source_ref: raw, requirement: raw });
+          startDesc = raw;
+        }
       }
 
       // New ticket (real id or ad-hoc slug) not yet tracked → start the pipeline.
@@ -2393,13 +2480,33 @@ export default function piRx(pi: ExtensionAPI) {
   function resolveStageTicket(cmd: string, args: string): { ticket: string; note: string } {
     const raw = args.trim();
     const toks = raw.split(/\s+/).filter(Boolean);
-    const first = extractTicket(toks[0] ?? "");
-    if (first) return { ticket: first, note: toks.slice(1).join(" ") };
-    if (cmd === "start" && raw) return { ticket: slugId(raw), note: raw }; // ad-hoc pipeline; text IS the requirement
-    // No id given: drive the lone active ticket (status/retro tolerate none).
     const dir = repoStateDir(ui?.cwd || process.cwd());
-    const active = dir ? readStates(dir).filter(isActive) : [];
+    const states = dir ? readStates(dir) : [];
+    const first = toks[0] && states.some((s) => s.ticket === toks[0]) ? toks[0] : extractTicket(toks[0] ?? "");
+    if (first) return { ticket: first, note: toks.slice(1).join(" ") };
+    if (cmd === "start" && raw && dir) {
+      // Free-text task: the text IS the requirement — record it before the start runs.
+      const t = textTaskId(dir, raw);
+      if (!t.existing) writeIntake(dir, t.id, { source: "text", source_ref: raw, requirement: raw });
+      return { ticket: t.id, note: raw };
+    }
+    // No id given: drive the lone active ticket (status/retro tolerate none).
+    const active = states.filter(isActive);
     return { ticket: active.length === 1 ? active[0].ticket : "", note: raw };
+  }
+
+  /** `/rx <stage word> [notes]`: run that stage on this pane's ticket (else the lone active one). */
+  async function runStage(cmd: string, note: string, dir: string, ctx: ExtensionCommandContext) {
+    if (cmd === "review") {
+      await openReview("", ctx);
+      return;
+    }
+    const ticket = currentTicket(dir, ctx, true)?.ticket ?? resolveStageTicket(cmd, "").ticket;
+    if (!ticket && cmd !== "status" && cmd !== "retro") {
+      if (ctx.hasUI) ctx.ui.notify(`rx: which ticket? /rx-${cmd} <ticket>`, "info");
+      return;
+    }
+    dispatch(cmd, ticket, note);
   }
   for (const cmd of Object.keys(STAGE_DESCRIPTIONS)) {
     const handler = async (args: string, ctx: ExtensionCommandContext) => {
@@ -2985,7 +3092,34 @@ export function demo() {
   if (extractTicket("https://github.com/myorg/myrepo/issues/789") !== "gh-789")
     bad.push("ticket not extracted from GitHub URL");
   if (extractTicket("improve logging") !== "") bad.push("free text must not read as a ticket");
-  if (slugId("improve logging and tracing") !== "task-improve-logging-and-tracing") bad.push("ad-hoc slug wrong");
+  if (slugId("improve logging and tracing") !== "improve-logging-tracing") bad.push(`ad-hoc slug wrong: ${slugId("improve logging and tracing")}`);
+  if (slugId("Add retry to the webhook sender, please!") !== "add-retry-webhook-sender") bad.push("slug keeps filler or punctuation");
+  if (slugId("the") !== "the" || slugId("!!!") !== "task") bad.push("slug of all-filler / no-word text wrong");
+  if (!sameTask("add retry to the webhook sender", "Add retry to webhook sender")) bad.push("filler rewording reads as a new task");
+  if (sameTask("add retry to the webhook sender", "add retry to the email sender")) bad.push("different tasks read as the same");
+  if (!PIPELINE_ID.test(slugId("Add retry to the webhook sender"))) bad.push("PIPELINE_ID rejects a free-text id");
+  if (PIPELINE_ID.test("Add-Retry")) bad.push("PIPELINE_ID accepts a mixed-case non-ticket slug");
+  {
+    // textTaskId: the same task reworded reuses its pipeline; a different task with the same slug,
+    // a finished one, or a pending intake gets the next free suffix.
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "rx-demo-"));
+    const st = (ticket: string, phase: Phase, requirement: string) =>
+      writeState(statePath(tmp, ticket), { ticket, phase, requirement, log: [], updated_at: "" } as unknown as RxState);
+    st("add-retry-webhook-sender", "awaiting-approval", "add retry to the webhook sender");
+    const same = textTaskId(tmp, "Add retry to webhook sender");
+    if (same.id !== "add-retry-webhook-sender" || !same.existing) bad.push(`reworded task not reused: ${JSON.stringify(same)}`);
+    const diff = textTaskId(tmp, "add retry for webhook sender metrics");
+    if (diff.id !== "add-retry-webhook-sender-2" || diff.existing) bad.push(`colliding slug not suffixed: ${JSON.stringify(diff)}`);
+    st("fix-login", "cleaned", "fix login");
+    if (textTaskId(tmp, "fix login").id !== "fix-login-2") bad.push("finished task's id reused");
+    writeIntake(tmp, "speed-up-search", { source: "text", source_ref: "speed up search", requirement: "speed up search" });
+    const resumed = textTaskId(tmp, "speed up the search");
+    if (resumed.id !== "speed-up-search" || resumed.existing) bad.push(`interrupted start not resumed: ${JSON.stringify(resumed)}`);
+    if (textTaskId(tmp, "speed up search page").id !== "speed-up-search-page") bad.push("unrelated slug disturbed");
+    writeIntake(tmp, "cache-results", { source: "text", source_ref: "cache results", requirement: "cache results" });
+    if (textTaskId(tmp, "cache results in redis").id !== "cache-results-redis") bad.push("longer text slug wrong");
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
   if (!PIPELINE_ID.test("ENG-6182")) bad.push("PIPELINE_ID rejects a real ticket");
   if (!PIPELINE_ID.test("gh-123")) bad.push("PIPELINE_ID rejects a gh issue id");
   if (!PIPELINE_ID.test("task-improve-the-plugin")) bad.push("PIPELINE_ID rejects a task id");

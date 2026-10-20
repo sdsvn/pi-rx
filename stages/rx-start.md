@@ -4,28 +4,37 @@ description: "Start the pipeline for an issue, ticket, or ad-hoc task: worktree 
 
 Stage 1 of the pipeline for `$1` — design only, ending at a **human approval gate**. You do NOT
 write implementation code. `$1` is the canonical ticket or task id (Linear `ENG-1234`, GitHub `gh-123`,
-Jira `PROJ-56`, or ad-hoc `task-<slug>`); `$2` is the free-text requirement/note. State is owned by the
+Jira `PROJ-56`, or a free-text task's kebab id like `add-retry-webhook-sender`); `$2` is the free-text
+requirement/note. State is owned by the
 plugin: read/mutate ONLY via the `rx_*` tools; bash is for real work (`git`, `gh`, `openspec`).
 
 Announce: "Starting pipeline for `$1`."
 
 ## 0. Guard
 
-`rx_status` with `ticket: $1`. Existing pipeline → **stop**, show it, point at `/rx` or `/task`.
+`rx_status` with `ticket: $1`.
+- No pipeline → start at §1.
+- Phase `started` → **resume**: an earlier start was interrupted. Skip what the state already has
+  (`requirement` → §1, `worktree` → §2, `test_plan` → §3, `pseudocode` → §4) and continue from the
+  first missing piece.
+- Any other phase → **stop**, show it, point at `/rx`.
 
 ## 1. Requirement
 
 - GitHub issue (`gh-123` / `#123`): fetch with `gh issue view <number>`.
 - Linear ticket (`ENG-1234`): fetch with Linear MCP `get_issue` (or Linear CLI if available).
 - Jira / GitLab / Generic ticket: fetch via configured issue tool/CLI or ask user if incomplete.
-- Ad-hoc (`task-<slug>`): `$2` is the requirement; if thin, confirm scope with the user.
+- Free-text task: the requirement is the user's own words (`$2`, also saved as the state's
+  `requirement`); if thin, confirm scope with the user.
 - Anything material beyond what's literally asked (incl. doc-only byproducts) → confirm with the user
   before folding it in.
 
 ## 2. Worktree
 
 `rx_ground` (`status: error` → **stop**, never build on unverified main) → `rx_worktree` with
-`ticket: $1` → `rx_init` with `branch: details.branch`, `worktree: details.path`. `cd` into the worktree.
+`ticket: $1` → `rx_init` with `branch: details.branch`, `worktree: details.path` → `rx_set {title,
+requirement}` with the story from §1 (title = one line; requirement = the full text you'll design
+against), so a resumed start and every later stage read it from state. `cd` into the worktree.
 
 ## 3. Test plan — present it, invite pushback
 
