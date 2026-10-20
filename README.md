@@ -173,12 +173,12 @@ Put a `.rx/config.yml` in your repo (commit it and the whole team gets it), or
 `~/.config/rx/config.yml` for yourself:
 
 ```yaml
-tickets: jira                  # your default: linear (default), jira, github, gitlab, or your own
-ticket_shape: ^(PAY|OPS)-\d+$  # optional: what your ticket ids look like
+tickets: linear                # your default: linear (default), jira, github, gitlab, or your own
+ticket_shape: ^(ENG|OPS)-\d+$  # optional: what your ticket ids look like
 ```
 
-- **`tickets`**: bare ids like `PAY-123` go to this system. URLs always go to the system they
-  belong to, so a Linear link still works when Jira is the default.
+- **`tickets`**: bare ids like `ENG-123` go to this system. URLs always go to the system they
+  belong to, so a GitHub issue link still works when Linear is the default.
 - **`ticket_shape`**: a regex for your ids, case-insensitive. Without it, anything shaped like
   `KEY-123` is a ticket. Set it when your ids look different, or so that only your own projects
   count. The id is the whole match, or the `(?<id>…)` group if there is one: GitLab-style `#123` is

@@ -1251,7 +1251,8 @@ const DEFAULT_TICKET_SHAPE = "^[A-Za-z][A-Za-z0-9_]*-\\d+$";
 export function parseConfig(text: string): RxConfig {
   const out: Record<string, string> = {};
   for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
-    const kv = line.match(/^([A-Za-z_]+):\s*(.*?)\s*$/);
+    // A ` # …` tail is a comment; a `#` with no space before it is data (`ticket_shape: ^#(?<id>\d+)$`).
+    const kv = line.replace(/\s+#.*$/, "").match(/^([A-Za-z_]+):\s*(.*?)\s*$/);
     if (kv && kv[2] && !kv[2].startsWith("#")) out[kv[1]] = unquote(kv[2]);
   }
   return out;
@@ -3284,7 +3285,8 @@ export function demo() {
     if (id("#123", { tickets: "gitlab", ticket_shape: "^#(?<id>\\d+)$" }) !== "gl-123") bad.push("gitlab default with #N shape wrong");
     if (id("#123") !== "gh-123") bad.push("#N no longer GitHub by default");
     if (id("ENG-1", { tickets: "nope" }) !== "") bad.push("unknown default source still claims bare ids");
-    const conf = parseConfig("# team\ntickets: jira   \nticket_shape: '^(PAY)-\\d+$'\nempty:\n");
+    const conf = parseConfig("# team\ntickets: jira   # our tracker\nticket_shape: '^(PAY)-\\d+$'  # ids\nempty:\n");
+    if (parseConfig("ticket_shape: ^#(?<id>\\d+)$").ticket_shape !== "^#(?<id>\\d+)$") bad.push("config # inside a value stripped");
     if (conf.tickets !== "jira" || conf.ticket_shape !== "^(PAY)-\\d+$" || "empty" in conf) bad.push(`config not parsed: ${JSON.stringify(conf)}`);
     if (id("ENG-6182") !== "ENG-6182" || via("ENG-6182") !== "linear") bad.push("bare Linear id not recognized");
     if (id("eng-6182") !== "ENG-6182") bad.push("lowercase Linear id not uppercased");
