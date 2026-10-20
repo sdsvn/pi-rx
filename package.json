@@ -15,6 +15,15 @@
     "type": "git",
     "url": "https://github.com/sdsvn/pi-rx"
   },
+  "files": [
+    "src/",
+    "stages/",
+    "sources/",
+    "workflow/",
+    "skills/",
+    "!skills/*/evals/",
+    "pseudocode-structure.md"
+  ],
   "omp": {
     "extensions": [
       "./src/index.ts"
