@@ -4,6 +4,13 @@
   "description": "Gated Rx workflow: phase state machine, guarded transitions, and a live phase panel.",
   "type": "module",
   "omp": {
-    "extensions": ["./src/index.ts"]
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sdsvn/pi-rx"
   }
 }

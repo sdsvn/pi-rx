@@ -9,6 +9,7 @@
   <img alt="zero dependencies" src="https://img.shields.io/badge/dependencies-0-2ea44f">
   <img alt="no build step" src="https://img.shields.io/badge/build-none-2ea44f">
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-source-3178c6">
+  <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue"></a>
 </p>
 
 <p>
@@ -237,3 +238,7 @@ invariants, backlog). Every tool and surface is documented in
 [`workflow/REFERENCE.md`](./workflow/REFERENCE.md).
 
 </details>
+
+## 📄 License
+
+[MIT](./LICENSE)
