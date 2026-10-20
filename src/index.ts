@@ -1,5 +1,4 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
-import { completeSimple } from "@oh-my-pi/pi-ai";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
 import * as net from "node:net";
@@ -1437,9 +1436,16 @@ function withSpaceLock<T>(
  }
 }
 
-export default function piRx(pi: ExtensionAPI) {
-  const z = pi.zod;
-  pi.setLabel("pi-rx (gated workflow)");
+export default async function piRx(pi: ExtensionAPI) {
+  // Tool schemas are TypeBox, which both hosts speak: omp injects its shim as `pi.typebox`; pi provides
+  // the `typebox` package to extensions.
+  const Type = ((pi as any).typebox?.Type ?? (await import("typebox")).Type) as any;
+  // A string enum as plain JSON Schema (`{type: string, enum}`), which every model provider accepts.
+  const stringEnum = (values: readonly string[], description: string) =>
+    Type.Unsafe({ type: "string", enum: [...values], description });
+  // omp's setLabel(label) names the extension; pi's setLabel(entryId, label) bookmarks a session entry
+  // and can't be called while loading. omp is the host that injects `pi.typebox`.
+  if ((pi as any).typebox) pi.setLabel("pi-rx (gated workflow)");
 
   let ui: ExtensionContext | null = null;
   let watcher: fs.FSWatcher | null = null;
@@ -1583,8 +1589,8 @@ export default function piRx(pi: ExtensionAPI) {
     description:
       "Read the Rx pipeline state for the current repo. Without a ticket, lists all tickets " +
       "and their phases; with one, returns its full state file (phase, PR, log, paths).",
-    parameters: z.object({
-      ticket: z.string().optional().describe("Bare ticket id, e.g. ENG-1234. Omit to list all."),
+    parameters: Type.Object({
+      ticket: Type.Optional(Type.String({ description: "Bare ticket id, e.g. ENG-1234. Omit to list all." })),
     }),
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
       const params = rawParams as { ticket?: string };
@@ -1623,8 +1629,8 @@ export default function piRx(pi: ExtensionAPI) {
       "read the okf/ bundle for structure) BEFORE any grep/glob/manual scan; manual discovery is then " +
       "confirm-only. Call this FIRST in /rx-start (§4 design) and /rx-approve (§3 implementation) " +
       "before locating anything. If you bypass an existing map, log an rx_deviation.",
-    parameters: z.object({
-      ticket: z.string().optional().describe("Bare ticket id; resolves the ticket worktree. Omit to check the current repo root."),
+    parameters: Type.Object({
+      ticket: Type.Optional(Type.String({ description: "Bare ticket id; resolves the ticket worktree. Omit to check the current repo root." })),
     }),
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
       const params = rawParams as { ticket?: string };
@@ -1680,8 +1686,8 @@ export default function piRx(pi: ExtensionAPI) {
       "The review renderer shows only four `## ` sections — Context / Design / Diagrams / Open " +
       "Questions — and silently drops anything else, so a non-conforming artifact renders blank. " +
       "Returns ok + the exact problems to fix. Run this in /rx-start before arriving at the gate.",
-    parameters: z.object({
-      ticket: z.string().describe("Bare ticket id, e.g. ENG-1234."),
+    parameters: Type.Object({
+      ticket: Type.String({ description: "Bare ticket id, e.g. ENG-1234." }),
     }),
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
       const params = rawParams as { ticket: string };
@@ -1729,10 +1735,10 @@ export default function piRx(pi: ExtensionAPI) {
       "self-edge awaiting-approval→awaiting-approval (pseudocode rewritten at the gate, bumps " +
       "design_rev), plus the early-abort edge <any non-terminal phase>→aborted (abandon the ticket). " +
       "Refuses invalid jumps. Logs the transition with a note.",
-    parameters: z.object({
-      ticket: z.string().describe("Bare ticket id, e.g. ENG-1234."),
-      to: z.enum(PHASES).describe("Target phase (same phase = a design revision when at the gate)."),
-      note: z.string().describe("Why — logged in the audit trail."),
+    parameters: Type.Object({
+      ticket: Type.String({ description: "Bare ticket id, e.g. ENG-1234." }),
+      to: stringEnum(PHASES, "Target phase (same phase = a design revision when at the gate)."),
+      note: Type.String({ description: "Why — logged in the audit trail." }),
     }),
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
       const params = rawParams as { ticket: string; to: Phase; note: string };
@@ -1759,10 +1765,10 @@ export default function piRx(pi: ExtensionAPI) {
     description:
       "Create the state file for a new pipeline at phase=started. Call once in /rx-start after the " +
       "worktree exists. ticket is the canonical id (ENG-1234, or a free-text task id like add-retry-webhook-sender). Folds in what the user asked for (source, requirement) recorded at /rx.",
-    parameters: z.object({
-      ticket: z.string().describe("Canonical pipeline id."),
-      branch: z.string().describe("Git branch (usually the ticket id)."),
-      worktree: z.string().describe("Absolute worktree path."),
+    parameters: Type.Object({
+      ticket: Type.String({ description: "Canonical pipeline id." }),
+      branch: Type.String({ description: "Git branch (usually the ticket id)." }),
+      worktree: Type.String({ description: "Absolute worktree path." }),
     }),
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
       const params = rawParams as { ticket: string; branch: string; worktree: string };
@@ -1796,7 +1802,7 @@ export default function piRx(pi: ExtensionAPI) {
       "ensures .worktrees/ is git-ignored (adds + commits if not), and is idempotent (reuses a matching " +
       "worktree, refuses a conflicting branch). Returns the absolute worktree path + branch to hand to " +
       "rx_init. Call in /rx-start after rx_ground.",
-    parameters: z.object({ ticket: z.string().describe("Canonical pipeline id (ENG-1234 or a free-text task id).") }),
+    parameters: Type.Object({ ticket: Type.String({ description: "Canonical pipeline id (ENG-1234 or a free-text task id)." }) }),
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
       const { ticket } = rawParams as { ticket: string };
       if (!PIPELINE_ID.test(ticket)) return { content: [{ type: "text", text: `rx: invalid ticket '${ticket}'.` }], isError: true };
@@ -1819,9 +1825,9 @@ export default function piRx(pi: ExtensionAPI) {
       "Set one or more fields on a ticket's state (test_plan, pseudocode, openspec_change, pr_number, " +
       "herdr_workspace, …) and stamp updated_at. Values may be strings, numbers, or null. Use " +
       "rx_transition for phase moves — not this.",
-    parameters: z.object({
-      ticket: z.string().describe("Canonical pipeline id."),
-      fields: z.record(z.string(), z.union([z.string(), z.number(), z.null()])).describe("Field → value map to assign."),
+    parameters: Type.Object({
+      ticket: Type.String({ description: "Canonical pipeline id." }),
+      fields: Type.Record(Type.String(), Type.Union([Type.String(), Type.Number(), Type.Null()]), { description: "Field → value map to assign." }),
     }),
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
       const params = rawParams as { ticket: string; fields: Record<string, string | number | null> };
@@ -1840,10 +1846,10 @@ export default function piRx(pi: ExtensionAPI) {
     name: "rx_log",
     label: "Rx Log",
     description: "Append a timestamped audit entry to a ticket's log (event + note).",
-    parameters: z.object({
-      ticket: z.string().describe("Canonical pipeline id."),
-      event: z.string().describe("Short event key, e.g. 'test-plan', 'review-note'."),
-      note: z.string().describe("Free-text detail."),
+    parameters: Type.Object({
+      ticket: Type.String({ description: "Canonical pipeline id." }),
+      event: Type.String({ description: "Short event key, e.g. 'test-plan', 'review-note'." }),
+      note: Type.String({ description: "Free-text detail." }),
     }),
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
       const params = rawParams as { ticket: string; event: string; note: string };
@@ -1863,13 +1869,13 @@ export default function piRx(pi: ExtensionAPI) {
       "Record one deviation to the per-repo deviation log (feeds /rx-retro). source: 'self' (agent " +
       "self-report) or 'auto' (human correction). kind: guessed|ignored-instruction|scope-miss|" +
       "rejected|reworked|request-changes|contract-drift|other. Always pass context AND reasoning.",
-    parameters: z.object({
-      ticket: z.string().describe("Canonical pipeline id."),
-      source: z.enum(["self", "auto"]).describe("Who reported it."),
-      kind: z.string().describe("Deviation kind."),
-      note: z.string().describe("One line — what went wrong."),
-      context: z.string().describe("Inputs/state at the time; what was given/missing."),
-      reasoning: z.string().describe("Why it happened / the human's stated reason."),
+    parameters: Type.Object({
+      ticket: Type.String({ description: "Canonical pipeline id." }),
+      source: stringEnum(["self", "auto"], "Who reported it."),
+      kind: Type.String({ description: "Deviation kind." }),
+      note: Type.String({ description: "One line — what went wrong." }),
+      context: Type.String({ description: "Inputs/state at the time; what was given/missing." }),
+      reasoning: Type.String({ description: "Why it happened / the human's stated reason." }),
     }),
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
       const params = rawParams as { ticket: string; source: string; kind: string; note: string; context: string; reasoning: string };
@@ -1887,7 +1893,7 @@ export default function piRx(pi: ExtensionAPI) {
       "Create+register the per-repo OpenSpec store once (idempotent). Returns { store, dir, changesDir } " +
       "so /rx-start can scaffold a change. Reports installed:false when the openspec CLI is absent — " +
       "skip the spec layer cleanly in that case.",
-    parameters: z.object({}),
+    parameters: Type.Object({}),
     async execute(_id, _rawParams, _signal, _onUpdate, ctx) {
       const dir = repoStateDir(ctx.cwd || process.cwd());
       if (!dir) return { content: [{ type: "text", text: "rx: not inside a git repo." }], isError: true };
@@ -1935,10 +1941,10 @@ export default function piRx(pi: ExtensionAPI) {
       "validate (strict), archive (fold deltas into baseline specs), or show (JSON). Author the change " +
       "files under rx_openspec_ensure's changesDir first; this runs the CLI over them. Skips cleanly if " +
       "the openspec CLI is absent.",
-    parameters: z.object({
-      op: z.enum(["validate", "archive", "show"]).describe("OpenSpec operation."),
-      change: z.string().describe("Change id (kebab), e.g. eng-1234-thing."),
-      skipSpecs: z.boolean().optional().describe("archive only: pass --skip-specs (no baseline spec update)."),
+    parameters: Type.Object({
+      op: stringEnum(["validate", "archive", "show"], "OpenSpec operation."),
+      change: Type.String({ description: "Change id (kebab), e.g. eng-1234-thing." }),
+      skipSpecs: Type.Optional(Type.Boolean({ description: "archive only: pass --skip-specs (no baseline spec update)." })),
     }),
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
       const params = rawParams as { op: "validate" | "archive" | "show"; change: string; skipSpecs?: boolean };
@@ -1976,11 +1982,11 @@ export default function piRx(pi: ExtensionAPI) {
       "Self-hosted (no origin remote): no push/gh — merges the ticket branch straight into local main " +
       "at the repo root and marks the ticket self-delivered; that's the sanctioned delivery, not " +
       "contract-drift, and needs only a title (used as the merge commit summary).",
-    parameters: z.object({
-      ticket: z.string().describe("Canonical pipeline id."),
-      title: z.string().optional().describe("PR title (required to OPEN a PR, or as the merge summary when self-hosted)."),
-      body: z.string().optional().describe("PR body markdown (required to OPEN a PR; optional merge-message detail when self-hosted)."),
-      comment: z.string().optional().describe("Rework only: a PR comment (or re-merge summary when self-hosted) noting what changed."),
+    parameters: Type.Object({
+      ticket: Type.String({ description: "Canonical pipeline id." }),
+      title: Type.Optional(Type.String({ description: "PR title (required to OPEN a PR, or as the merge summary when self-hosted)." })),
+      body: Type.Optional(Type.String({ description: "PR body markdown (required to OPEN a PR; optional merge-message detail when self-hosted)." })),
+      comment: Type.Optional(Type.String({ description: "Rework only: a PR comment (or re-merge summary when self-hosted) noting what changed." })),
     }),
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
       const params = rawParams as { ticket: string; title?: string; body?: string; comment?: string };
@@ -2046,7 +2052,7 @@ export default function piRx(pi: ExtensionAPI) {
     description:
       "Read the PR's merge state via gh: returns { state, merged, url }. The /rx-cleanup gate — only tear " +
       "down when merged. Self-hosted (rx_pr's direct-merge delivery): already merged by construction, no gh call.",
-    parameters: z.object({ ticket: z.string().describe("Canonical pipeline id.") }),
+    parameters: Type.Object({ ticket: Type.String({ description: "Canonical pipeline id." }) }),
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
       const { ticket } = rawParams as { ticket: string };
       const dir = repoStateDir(ctx.cwd || process.cwd());
@@ -2071,7 +2077,7 @@ export default function piRx(pi: ExtensionAPI) {
     name: "rx_decision",
     label: "Rx Decision",
     description: "Append a standing objection / process decision to ~/.claude/workflow/DECISIONS.md (dated, tagged with the ticket). For /rx-reject and /rx-rework process-level objections.",
-    parameters: z.object({ ticket: z.string().describe("Canonical pipeline id."), note: z.string().describe("The standing decision/objection, one line.") }),
+    parameters: Type.Object({ ticket: Type.String({ description: "Canonical pipeline id." }), note: Type.String({ description: "The standing decision/objection, one line." }) }),
     async execute(_id, rawParams, _signal, _onUpdate, _ctx) {
       const { ticket, note } = rawParams as { ticket: string; note: string };
       const f = path.join(os.homedir(), ".claude", "workflow", "DECISIONS.md");
@@ -2095,7 +2101,7 @@ export default function piRx(pi: ExtensionAPI) {
       "commits AND behind), or 'error'. On behind/diverged the caller MUST reconcile and re-verify " +
       "race-prone anchors (migration numbers) + sibling-merged surface before implementing. Self-hosted " +
       "(no origin remote) grounds on local main instead — that's sanctioned, never a hard stop.",
-    parameters: z.object({}),
+    parameters: Type.Object({}),
     async execute(_id, _rawParams, _signal, _onUpdate, ctx) {
       const cwd = ctx.cwd || process.cwd();
       const root = repoRoot(cwd) || cwd;
@@ -2152,7 +2158,7 @@ export default function piRx(pi: ExtensionAPI) {
       "only then wakes a fresh `omp -p` tick on the bundled watcher.md. Idempotent — reuses a live watch " +
       "tab. Records herdr_watch_tab/_pane. Call from /rx-pr once the PR is open and pr_number is set. " +
       "No-op outside Herdr or before the PR exists.",
-    parameters: z.object({ ticket: z.string().describe("Bare ticket id.") }),
+    parameters: Type.Object({ ticket: Type.String({ description: "Bare ticket id." }) }),
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
       const { ticket } = rawParams as { ticket: string };
       const dir = repoStateDir(ctx.cwd || process.cwd());
@@ -2178,7 +2184,7 @@ export default function piRx(pi: ExtensionAPI) {
     name: "rx_watch_stop",
     label: "Rx Watch Stop",
     description: "Stop a ticket's PR watcher: close its Herdr watch tab (kills the loop + any in-flight omp tick). Idempotent — safe if already gone.",
-    parameters: z.object({ ticket: z.string().describe("Bare ticket id.") }),
+    parameters: Type.Object({ ticket: Type.String({ description: "Bare ticket id." }) }),
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
       const { ticket } = rawParams as { ticket: string };
       const dir = repoStateDir(ctx.cwd || process.cwd());
@@ -2200,7 +2206,7 @@ export default function piRx(pi: ExtensionAPI) {
       "and delete the disposable artifacts (review store + artifact dir). Idempotent, best-effort. The " +
       "state file stays as the audit record — follow with rx_transition to 'cleaned' (merged) or " +
       "'aborted' (abandoned early via /rx-abort).",
-    parameters: z.object({ ticket: z.string().describe("Bare ticket id.") }),
+    parameters: Type.Object({ ticket: Type.String({ description: "Bare ticket id." }) }),
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
       const { ticket } = rawParams as { ticket: string };
       const dir = repoStateDir(ctx.cwd || process.cwd());
@@ -2220,7 +2226,7 @@ export default function piRx(pi: ExtensionAPI) {
     description:
       "Aggregate this repo's deviation log for /rx-retro: counts by source/kind and by phase, plus the " +
       "full entries (details.entries, newest last). Optional ticket filter.",
-    parameters: z.object({ ticket: z.string().optional().describe("Filter to one ticket. Omit for all.") }),
+    parameters: Type.Object({ ticket: Type.Optional(Type.String({ description: "Filter to one ticket. Omit for all." })) }),
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
       const { ticket } = rawParams as { ticket?: string };
       const dir = repoStateDir(ctx.cwd || process.cwd());
@@ -2782,8 +2788,12 @@ export default function piRx(pi: ExtensionAPI) {
     const model = ctx.model;
     if (!model) return null;
     try {
-      const apiKey = await ctx.modelRegistry.getApiKey(model);
-      const reply = await completeSimple(
+      // Host-neutral: omp's pi-ai, else pi's; omp hands out a key, pi a key plus headers.
+      const ai: any = await import("@oh-my-pi/pi-ai").catch(() => import("@earendil-works/pi-ai"));
+      const reg: any = ctx.modelRegistry;
+      const auth = reg.getApiKey ? { apiKey: await reg.getApiKey(model) } : await reg.getApiKeyAndHeaders?.(model);
+      if (!auth || auth.ok === false) return null;
+      const reply = await ai.completeSimple(
         model,
         {
           systemPrompt: [
@@ -2799,7 +2809,7 @@ export default function piRx(pi: ExtensionAPI) {
             },
           ],
         },
-        { apiKey, disableReasoning: true },
+        { apiKey: auth.apiKey, headers: auth.headers, disableReasoning: true },
       );
       const text = reply.content
         .filter((c): c is { type: "text"; text: string } => c.type === "text")
@@ -3073,7 +3083,7 @@ export default function piRx(pi: ExtensionAPI) {
       "Open the ticket's design review for the human — Co-Review, or a local HTML review page when Co-Review " +
       "isn't installed. Call it once the ticket is at awaiting-approval and the pseudocode is final for this " +
       "round. The reviewer's comments and verdict then arrive as messages; don't wait or poll.",
-    parameters: z.object({ ticket: z.string().describe("Ticket id at the approval gate.") }),
+    parameters: Type.Object({ ticket: Type.String({ description: "Ticket id at the approval gate." }) }),
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
       const { ticket } = rawParams as { ticket: string };
       const c = ctx as ExtensionContext;
@@ -3205,10 +3215,10 @@ export default function piRx(pi: ExtensionAPI) {
       "value — answering a reviewer's question or confirming you folded a comment — after a review " +
       "comment was delivered with its threadId. Keep it human and terse: 1–2 plain sentences, no " +
       "markdown structure; give detail only when the reviewer asks for more.",
-    parameters: z.object({
-      threadId: z.string().describe("Thread id from the delivered comment (or its short id, e.g. t2)."),
-      body: z.string().describe("Your reply — 1–2 plain sentences, human tone; shown in the reviewer's thread."),
-      ticket: z.string().optional().describe("Ticket id; defaults to the active review."),
+    parameters: Type.Object({
+      threadId: Type.String({ description: "Thread id from the delivered comment (or its short id, e.g. t2)." }),
+      body: Type.String({ description: "Your reply — 1–2 plain sentences, human tone; shown in the reviewer's thread." }),
+      ticket: Type.Optional(Type.String({ description: "Ticket id; defaults to the active review." })),
     }),
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
       const params = rawParams as { threadId: string; body: string; ticket?: string };

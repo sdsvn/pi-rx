@@ -7,6 +7,12 @@ Invariants for what exists now). Append closed items and new learnings here, new
 
 ## Learnings log (durable insights; git has the commit detail)
 
+- **2026-10-21** — Made Rx run in pi as well as omp. Three things blocked pi: a static
+  `@oh-my-pi/pi-ai` import (now a lazy import that tries omp's then pi's package), tool schemas built
+  with omp's `pi.zod` (now TypeBox: `pi.typebox` on omp, the `typebox` package on pi; enums as
+  `Type.Unsafe({type: string, enum})`), and `pi.setLabel(name)` at load, which in pi labels a session
+  entry and is refused while loading (now omp-only). Verified by loading it headless in both (`--mode
+  rpc`) with a probe extension listing the 21 `rx_*` tools and validating their schemas.
 - **2026-10-21** — Writing a source file just to say "we use Jira" was too much: added `.rx/config.yml`
   (`tickets:` default system, `ticket_shape:` bare-id regex) and bundled Jira and GitLab. Bare ids now
   belong to the default system instead of being hard-wired into the Linear source. Ordering mattered: a

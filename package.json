@@ -1,16 +1,31 @@
 {
   "name": "pi-rx",
   "version": "0.1.0",
-  "description": "Gated Rx workflow: phase state machine, guarded transitions, and a live phase panel.",
+  "description": "Ticket in, merged PR out: a gated, test-plan-first workflow for omp and pi coding agents.",
+  "keywords": [
+    "pi-package",
+    "omp",
+    "pi",
+    "coding-agent",
+    "workflow"
+  ],
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sdsvn/pi-rx"
+  },
   "omp": {
     "extensions": [
       "./src/index.ts"
     ]
   },
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/sdsvn/pi-rx"
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
   }
 }

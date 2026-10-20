@@ -5,7 +5,7 @@
 ### Ticket in, merged PR out, and you approve the design before any code is written.
 
 <p>
-  <img alt="omp / pi extension" src="https://img.shields.io/badge/omp%20%2F%20pi-extension-6f42c1">
+  <img alt="pi and omp extension" src="https://img.shields.io/badge/pi%20%7C%20omp-extension-6f42c1">
   <img alt="zero dependencies" src="https://img.shields.io/badge/dependencies-0-2ea44f">
   <img alt="no build step" src="https://img.shields.io/badge/build-none-2ea44f">
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-source-3178c6">
@@ -84,18 +84,24 @@ flowchart LR
 | 🧹 **Nothing lands in your project** | State, design docs, and specs live under `~/.claude/workflow/`, keyed per repository. Rx never writes to your repo. |
 | 🔌 **Works with your tracker** | Linear, Jira, GitHub and GitLab built in. Name yours in one line of config, or teach Rx a new one with a short markdown file. |
 | 📈 **It learns from your corrections** | Every rejection, rework, and requested change is logged with its reason. `/rx-retro` turns patterns into fixes. |
-| 🪶 **Tiny footprint** | One TypeScript file plus markdown playbooks. No dependencies, no build: omp runs the source. |
+| 🪶 **Tiny footprint** | One TypeScript file plus markdown playbooks. No dependencies, no build: pi and omp run the source. |
 
 ## 🚀 Quick start
 
-**1. Clone**
+Rx runs in both [pi](https://pi.dev) and omp.
+
+**1a. pi:** one command installs the extension and its bundled `pseudocode-design` skill:
+
+```bash
+pi install git:github.com/sdsvn/pi-rx
+```
+
+**1b. omp:** clone it, then register it in `~/.omp/agent/config.yml`. The `skills` entry loads the
+bundled `pseudocode-design` skill, which Rx uses for its design docs:
 
 ```bash
 git clone https://github.com/sdsvn/pi-rx ~/projects/pi-rx
 ```
-
-**2. Register it with omp** in `~/.omp/agent/config.yml`. The `skills` entry loads the bundled
-`pseudocode-design` skill, which Rx uses for its design docs:
 
 ```yaml
 extensions:
@@ -106,7 +112,7 @@ skills:
     - ~/projects/pi-rx/skills
 ```
 
-**3. Go.** Restart omp, then from inside any git repository:
+**2. Go.** Restart pi or omp, then from inside any git repository:
 
 ```text
 /rx ENG-1234                          # a Linear ticket (or its URL)
@@ -119,7 +125,7 @@ picks up the same task. Using Jira, GitLab or something else? [Set your ticketin
 
 `/rx` is the only command you need to remember. It sees where the ticket is and runs the next step.
 
-**Requirements:** omp / pi, `git`, and `gh` (signed in).
+**Requirements:** pi or omp, `git`, and `gh` (signed in).
 
 ## 🔄 How a ticket flows
 
@@ -302,7 +308,11 @@ Optional environment variables:
 - [`sources/`](./sources) holds the bundled ticket sources.
 - [`workflow/`](./workflow) holds the docs those playbooks read.
 
-omp runs the source directly, so restart or reload omp to pick up an edit.
+pi and omp both run the source directly, so reload to pick up an edit. To work on a checkout in pi,
+install it from the local path: `pi install ~/projects/pi-rx`.
+
+The extension is written against pi's API (TypeBox tool schemas, `@earendil-works/pi-ai`); omp loads it
+through its pi-compatibility layer and its injected `pi.typebox`, so one source serves both.
 
 Sanity check (state machine + repo-key checksum parity with the system `cksum`):
 
