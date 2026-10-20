@@ -7,6 +7,11 @@ Invariants for what exists now). Append closed items and new learnings here, new
 
 ## Learnings log (durable insights; git has the commit detail)
 
+- **2026-10-21** — Writing a source file just to say "we use Jira" was too much: added `.rx/config.yml`
+  (`tickets:` default system, `ticket_shape:` bare-id regex) and bundled Jira and GitLab. Bare ids now
+  belong to the default system instead of being hard-wired into the Linear source. Ordering mattered: a
+  shape the user configured must beat other sources' patterns (`#123` as GitLab), but the built-in
+  `KEY-123` shape must come after them, or `gh-123` turns into a Linear ticket.
 - **2026-10-21** — Free-text tasks were second-class: the id was the whole sentence behind a `task-`
   prefix (branch, worktree, Space label), the requirement lived only in the one `/rx-start` turn (lost on
   an interrupted start), `/rx approve` started a task called "approve", and a reworded request started a

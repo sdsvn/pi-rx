@@ -114,7 +114,7 @@ skills:
 ```
 
 A plain-text task gets a short id (`add-retry-webhook-sender`); type it again, even reworded, and Rx
-picks up the same task. Using Jira, GitLab or something else? [Add a ticket source](#-ticket-sources).
+picks up the same task. Using Jira, GitLab or something else? [Set your ticketing system](#-ticket-sources).
 
 `/rx` is the only command you need to remember. It sees where the ticket is and runs the next step.
 
@@ -164,42 +164,65 @@ All optional. Here's what each one adds and what you get without it.
 
 ## 🎫 Ticket sources
 
-Rx doesn't hard-code a ticket system. A **ticket source** is a small markdown file: a pattern that
-recognises what you typed, and a prompt telling the agent how to fetch the story. Rx ships three:
+Rx isn't tied to Linear. Tell it which ticketing system you use, and it fetches tickets from there.
+
+### Pick your ticketing system
+
+Put a `.rx/config.yml` in your repo (commit it and the whole team gets it), or
+`~/.config/rx/config.yml` for yourself:
+
+```yaml
+tickets: jira                  # your default: linear (default), jira, github, gitlab, or your own
+ticket_shape: ^(PAY|OPS)-\d+$  # optional: what your ticket ids look like
+```
+
+- **`tickets`**: bare ids like `PAY-123` go to this system. URLs always go to the system they
+  belong to, so a Linear link still works when Jira is the default.
+- **`ticket_shape`**: a regex for your ids, case-insensitive. Without it, anything shaped like
+  `KEY-123` is a ticket. Set it when your ids look different, or so that only your own projects
+  count. The id is the whole match, or the `(?<id>…)` group if there is one: GitLab-style `#123` is
+  `tickets: gitlab` with `ticket_shape: ^#(?<id>\d+)$`.
+
+The repo's config wins over yours.
+
+### Bundled sources
 
 | Source | Recognises | Fetches with |
 |---|---|---|
-| [`linear`](./sources/linear.md) | `ENG-1234`, `linear.app/…/issue/ENG-1234` | Linear MCP `get_issue` (or the `linear` CLI) |
+| [`linear`](./sources/linear.md) | `ENG-1234` (the default), `linear.app/…/issue/ENG-1234` | Linear MCP `get_issue`, or the `linear` CLI |
+| [`jira`](./sources/jira.md) | `PROJ-123` with `tickets: jira`, `…atlassian.net/browse/PROJ-123` | Atlassian MCP `getJiraIssue`, or a Jira CLI |
 | [`github`](./sources/github.md) | `#123`, `gh-123`, `owner/repo#123`, issue URLs | `gh issue view` |
+| [`gitlab`](./sources/gitlab.md) | `gl-123`, issue URLs (`#123` with the shape above) | `glab issue view` |
 | [`text`](./sources/text.md) | anything else | your own words are the requirement |
 
-Add your own as `.rx/sources/<name>.md` in a repo (commit it and your whole team gets it) or in
-`~/.config/rx/sources/` for yourself:
+### Add your own
+
+A source is a small markdown file: patterns that recognise what you typed, and a prompt telling the
+agent how to fetch the story. Put it in `.rx/sources/<name>.md` (repo) or `~/.config/rx/sources/`:
 
 ```markdown
 ---
-name: jira
-description: Jira issues — PROJ-123 or a browse URL.
+name: shortcut
+description: Shortcut stories — sc-123 or a story URL.
 match:
-  - ^https://acme\.atlassian\.net/browse/([A-Z][A-Z0-9]+-\d+)
-  - ^([A-Z][A-Z0-9]+-\d+)$
-id: $1
+  - ^https://app\.shortcut\.com/[^/]+/story/(\d+)
+  - ^sc-(\d+)$
+id: sc-$1
 ---
-Fetch Jira issue **$ID** with the Jira MCP `getJiraIssue` tool (or `jira issue view $ID --plain`).
-**title** = the summary. **requirement** = the description and acceptance criteria, word for word.
+Fetch Shortcut story **$ID** (number $1) from the Shortcut API:
+`curl -s -H "Shortcut-Token: $SHORTCUT_API_TOKEN" https://api.app.shortcut.com/api/v3/stories/$1`.
+**title** = the story name. **requirement** = its description, word for word.
 Not found? Ask the user to paste it.
 ```
 
-- **`match`** — regexes tried in order on the first word you type; `flags: i` makes them
-  case-insensitive.
-- **`id`** — the pipeline id built from the regex groups (`$1`, or e.g. `gh-$1`); `case: upper`
-  uppercases it. It names the branch and the worktree.
-- **The body** — what the agent does to fetch the story, with `$ID`, `$REF` (exactly what you typed)
-  and the groups `$1`…`$9` filled in. End it by saying what the **title** and **requirement** are.
+- **`match`**: regexes tried on the first word you type (`flags: i` for case-insensitive).
+- **`id`**: the pipeline id built from the regex groups (`$1`); `case: upper` uppercases it. It names
+  the branch and the worktree.
+- **The body**: how to fetch the story, with `$ID`, `$REF` (exactly what you typed) and the groups
+  `$1`…`$9` filled in. End by saying what the **title** and **requirement** are.
 
-Sources are tried in order: the repo's, then `~/.config/rx/sources/`, then the bundled ones. So the
-Jira example above claims `PROJ-123` before the bundled Linear source sees it. A source with the same
-`name` as one further down replaces it.
+To send bare ids to it, set `tickets: shortcut` with a `ticket_shape` for them. A source with the same `name` as a bundled one
+replaces it, so you can also rewrite how Linear tickets are fetched.
 
 ## ⌨️ Commands
 

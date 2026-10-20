@@ -8,9 +8,9 @@ match:
   - ^gh-(\d+)$
 id: gh-$1
 ---
-Fetch GitHub issue **#$1** (the user gave `$REF`).
+Fetch GitHub issue **$ID** (the user gave `$REF`; the issue number is the digits in `$ID`).
 
-1. `gh issue view $1 --comments`. When `$REF` names another repository (a URL or
+1. `gh issue view <number> --comments`. When `$REF` names another repository (a URL or
    `owner/repo#N`), add `--repo owner/repo`.
 2. **title** = the issue title. **requirement** = the issue body plus any decision settled in the
    comments; keep checklists and acceptance criteria word for word.

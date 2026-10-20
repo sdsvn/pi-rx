@@ -1232,12 +1232,75 @@ export function matchSource(tok: string, sources: TicketSource[]): { source: Tic
     for (const re of source.match) {
       const m = tok.match(re);
       if (!m) continue;
-      let id = source.id.replace(/\$(\d)/g, (_, i) => m[+i] ?? "");
-      if (source.idCase === "upper") id = id.toUpperCase();
-      else if (source.idCase === "lower") id = id.toLowerCase();
+      const id = applyCase(source.id.replace(/\$(\d)/g, (_, i) => m[+i] ?? ""), source.idCase);
       if (PIPELINE_ID.test(id)) return { source, id };
     }
   return null;
+}
+
+/** Per-repo / per-user Rx settings — `.rx/config.yml` in the repo over `~/.config/rx/config.yml`,
+ *  plain `key: value` lines:
+ *    tickets: jira               your default ticketing system (a source name; default linear)
+ *    ticket_shape: ^(PAY|OPS)-\d+$   what a bare ticket id looks like here (case-insensitive; the id is
+ *                                     its `(?<id>…)` group if any, else the whole match) */
+export type RxConfig = { tickets?: string; ticket_shape?: string };
+
+/** The bare-id shape when none is configured: KEY-123 (Linear, Jira, Shortcut-style keys). */
+const DEFAULT_TICKET_SHAPE = "^[A-Za-z][A-Za-z0-9_]*-\\d+$";
+
+export function parseConfig(text: string): RxConfig {
+  const out: Record<string, string> = {};
+  for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
+    const kv = line.match(/^([A-Za-z_]+):\s*(.*?)\s*$/);
+    if (kv && kv[2] && !kv[2].startsWith("#")) out[kv[1]] = unquote(kv[2]);
+  }
+  return out;
+}
+
+function readConfig(repo: string | null): RxConfig {
+  const cfg = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+  const files = [path.join(cfg, "rx", "config.yml"), ...(repo ? [path.join(repo, ".rx", "config.yml")] : [])];
+  let out: RxConfig = {};
+  for (const f of files) {
+    try {
+      out = { ...out, ...parseConfig(fs.readFileSync(f, "utf8")) };
+    } catch {
+      /* absent */
+    }
+  }
+  return out;
+}
+
+/** What ticket (if any) the first word the user typed names. The default ticketing system's own
+ *  patterns (URLs…) come first. A bare id belongs to the default system: a `ticket_shape` you configured
+ *  is tried next, before every other source (so `#123` can mean GitLab); the built-in KEY-123 shape is
+ *  tried last (so `gh-123` stays GitHub). Null = free text. Pure; tested in demo(). */
+export function resolveTicket(tok: string, sources: TicketSource[], cfg: RxConfig): { source: TicketSource; id: string } | null {
+  if (!tok) return null;
+  const def = sources.find((s) => s.name === (cfg.tickets || "linear"));
+  const others = sources.filter((s) => s !== def);
+  const bare = (): { source: TicketSource; id: string } | null => {
+    if (!def) return null;
+    let shape: RegExp;
+    try {
+      shape = new RegExp(cfg.ticket_shape || DEFAULT_TICKET_SHAPE, "i");
+    } catch {
+      return null; // invalid shape: no bare ids
+    }
+    const m = tok.match(shape);
+    if (!m) return null;
+    // The id is the shape's `(?<id>…)` group when it has one (`^#(?<id>\d+)$` → 123), else the whole match.
+    const id = applyCase(def.id.replace(/\$(\d)/g, () => m.groups?.id ?? m[0]), def.idCase);
+    return PIPELINE_ID.test(id) ? { source: def, id } : null;
+  };
+  return (
+    (def ? matchSource(tok, [def]) : null) ??
+    (cfg.ticket_shape ? bare() ?? matchSource(tok, others) : matchSource(tok, others) ?? bare())
+  );
+}
+
+function applyCase(id: string, c: string): string {
+  return c === "upper" ? id.toUpperCase() : c === "lower" ? id.toLowerCase() : id;
 }
 
 /** A source's prompt for one ticket: `$ID`, `$REF` and the regex groups `$1`…`$9` (re-matched from
@@ -2404,8 +2467,9 @@ export default function piRx(pi: ExtensionAPI) {
     const dir = repoStateDir(cwd);
     const st = dir ? readStates(dir).find((s) => s.ticket === ticket) : undefined;
     const intake = dir ? readIntake(dir, ticket) : null;
-    const sources = loadSources(sourceDirs(repoRoot(cwd)));
-    const name = st?.source ?? intake?.source ?? matchSource(ticket, sources)?.source.name ?? "text";
+    const repo = repoRoot(cwd);
+    const sources = loadSources(sourceDirs(repo));
+    const name = st?.source ?? intake?.source ?? resolveTicket(ticket, sources, readConfig(repo))?.source.name ?? "text";
     const ref = st?.source_ref ?? intake?.source_ref ?? ticket;
     const src = sources.find((s) => s.name === name);
     if (!src) return `No ticket source named "${name}" is installed. Ask the user for ${ticket}'s requirement.`;
@@ -2441,7 +2505,8 @@ export default function piRx(pi: ExtensionAPI) {
       let ticket = "";
       if (toks[0] && active.some((s) => s.ticket === toks[0])) ticket = toks[0];
       else {
-        const hit = matchSource(toks[0] ?? "", loadSources(sourceDirs(repoRoot(ctx.cwd || process.cwd()))));
+        const repo = repoRoot(ctx.cwd || process.cwd());
+        const hit = resolveTicket(toks[0] ?? "", loadSources(sourceDirs(repo)), readConfig(repo));
         if (hit) {
           ticket = hit.id;
           if (!readStates(dir).some((s) => s.ticket === ticket)) writeIntake(dir, ticket, { source: hit.source.name, source_ref: toks[0] });
@@ -2598,7 +2663,8 @@ export default function piRx(pi: ExtensionAPI) {
     const dir = repoStateDir(ui?.cwd || process.cwd());
     const states = dir ? readStates(dir) : [];
     if (toks[0] && states.some((s) => s.ticket === toks[0])) return { ticket: toks[0], note: toks.slice(1).join(" ") };
-    const hit = matchSource(toks[0] ?? "", loadSources(sourceDirs(repoRoot(ui?.cwd || process.cwd()))));
+    const repo = repoRoot(ui?.cwd || process.cwd());
+    const hit = resolveTicket(toks[0] ?? "", loadSources(sourceDirs(repo)), readConfig(repo));
     if (hit) {
       if (cmd === "start" && dir && !states.some((s) => s.ticket === hit.id))
         writeIntake(dir, hit.id, { source: hit.source.name, source_ref: toks[0] });
@@ -3206,9 +3272,20 @@ export function demo() {
   {
     // Bundled ticket sources: Linear and GitHub recognised as before, free text falls through.
     const srcs = loadSources([path.join(PLUGIN_DIR, "sources")]);
-    const id = (tok: string) => matchSource(tok, srcs)?.id ?? "";
-    const via = (tok: string) => matchSource(tok, srcs)?.source.name ?? "";
-    if (!["github", "linear", "text"].every((n) => srcs.some((x) => x.name === n))) bad.push(`bundled sources missing: ${srcs.map((x) => x.name)}`);
+    const id = (tok: string, cfg: RxConfig = {}) => resolveTicket(tok, srcs, cfg)?.id ?? "";
+    const via = (tok: string, cfg: RxConfig = {}) => resolveTicket(tok, srcs, cfg)?.source.name ?? "";
+    if (!["github", "gitlab", "jira", "linear", "text"].every((n) => srcs.some((x) => x.name === n))) bad.push(`bundled sources missing: ${srcs.map((x) => x.name)}`);
+    // The config: a default ticketing system takes bare ids; a ticket shape narrows what counts as one.
+    if (via("PROJ-7", { tickets: "jira" }) !== "jira" || id("proj-7", { tickets: "jira" }) !== "PROJ-7") bad.push("tickets: jira doesn't take bare keys");
+    if (via("https://acme.atlassian.net/browse/PROJ-7") !== "jira") bad.push("Jira URL not recognized without config");
+    if (via("https://linear.app/a/issue/ENG-1/x", { tickets: "jira" }) !== "linear") bad.push("Linear URL lost when Jira is the default");
+    if (id("ENG-1", { ticket_shape: "^(PAY|OPS)-\\d+$" }) !== "" || id("pay-12", { ticket_shape: "^(PAY|OPS)-\\d+$" }) !== "PAY-12")
+      bad.push("ticket_shape not applied");
+    if (id("#123", { tickets: "gitlab", ticket_shape: "^#(?<id>\\d+)$" }) !== "gl-123") bad.push("gitlab default with #N shape wrong");
+    if (id("#123") !== "gh-123") bad.push("#N no longer GitHub by default");
+    if (id("ENG-1", { tickets: "nope" }) !== "") bad.push("unknown default source still claims bare ids");
+    const conf = parseConfig("# team\ntickets: jira   \nticket_shape: '^(PAY)-\\d+$'\nempty:\n");
+    if (conf.tickets !== "jira" || conf.ticket_shape !== "^(PAY)-\\d+$" || "empty" in conf) bad.push(`config not parsed: ${JSON.stringify(conf)}`);
     if (id("ENG-6182") !== "ENG-6182" || via("ENG-6182") !== "linear") bad.push("bare Linear id not recognized");
     if (id("eng-6182") !== "ENG-6182") bad.push("lowercase Linear id not uppercased");
     if (id("https://linear.app/acme/issue/ENG-6182/split-groups") !== "ENG-6182") bad.push("ticket not extracted from Linear URL");
@@ -3220,7 +3297,7 @@ export function demo() {
     if (id("improve") !== "" || id("") !== "") bad.push("free text must not read as a ticket");
     const gh = srcs.find((x) => x.name === "github")!;
     const out = renderSource(gh, "gh-789", "https://github.com/myorg/myrepo/issues/789");
-    if (!out.includes("gh issue view 789") || !out.includes("myorg/myrepo/issues/789")) bad.push("github prompt not rendered");
+    if (!out.includes("**gh-789**") || !out.includes("myorg/myrepo/issues/789")) bad.push("github prompt not rendered");
     const lin = renderSource(srcs.find((x) => x.name === "linear")!, "ENG-6182", "eng-6182");
     if (!lin.includes("get_issue") || !lin.includes("**ENG-6182**")) bad.push("linear prompt not rendered");
     // A team source shadows a bundled one of the same name, and comes first.
@@ -3230,7 +3307,7 @@ export function demo() {
       const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "rx-src-"));
       fs.writeFileSync(path.join(tmp, "jira.md"), "---\nname: linear\nmatch:\n  - ^([A-Z]+-\\d+)$\n---\nUse Jira for $ID.");
       const layered = loadSources([tmp, path.join(PLUGIN_DIR, "sources")]);
-      if (layered.filter((x) => x.name === "linear").length !== 1 || !renderSource(matchSource("ENG-1", layered)!.source, "ENG-1", "ENG-1").includes("Use Jira"))
+      if (layered.filter((x) => x.name === "linear").length !== 1 || !renderSource(resolveTicket("ENG-1", layered, {})!.source, "ENG-1", "ENG-1").includes("Use Jira"))
         bad.push("a team source doesn't shadow the bundled one of the same name");
       fs.rmSync(tmp, { recursive: true, force: true });
     }

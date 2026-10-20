@@ -1,9 +1,8 @@
 ---
 name: linear
-description: Linear issues — a bare id (ENG-1234) or a linear.app issue URL.
+description: Linear issues — a linear.app issue URL, or a bare id (ENG-1234) while Linear is the default ticketing system.
 match:
   - ^https?://linear\.app/[^/]+/issue/([A-Za-z][A-Za-z0-9_]*-\d+)
-  - ^([A-Za-z][A-Za-z0-9_]*-\d+)$
 flags: i
 id: $1
 case: upper

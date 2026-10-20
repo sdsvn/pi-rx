@@ -50,8 +50,9 @@ Deterministic **Linear-ticket (or ad-hoc task) → merged PR** pipeline, with a 
   any non-terminal phase ──▶ aborted        # /rx-abort: abandon + tear the runtime down
 ```
 
-- **Entry forms** (`/rx`): anything a **ticket source** recognises (`sources/*.md` — Linear and
-  GitHub bundled; teams add `.rx/sources/*.md`), or free text (a short kebab id whose text *is* the
+- **Entry forms** (`/rx`): anything a **ticket source** recognises (`sources/*.md` — Linear, Jira, GitHub,
+  GitLab bundled; teams add `.rx/sources/*.md` and pick a default with `tickets:` / `ticket_shape:` in
+  `.rx/config.yml`), or free text (a short kebab id whose text *is* the
   requirement). Linear is just the bundled default, not a dependency.
 - **Layers**: the `pi-rx` plugin *is* the workflow — bundled stage playbooks (`stages/rx-*.md`, injected
   by `/rx`) over the plugin's own state machine + `rx_*` tools (`src/index.ts`), with the docs the
