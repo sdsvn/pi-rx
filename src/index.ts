@@ -3149,7 +3149,7 @@ export default async function piRx(pi: ExtensionAPI) {
       if (ctx.hasUI) ctx.ui.notify(`rx-review: ${ticket} pseudocode won't render — fix its structure`, "error");
       pi.sendUserMessage(
         `rx-review refused: ${path.basename(artifact)} does not match the pseudocode-design render contract ` +
-          `(skill://pseudocode-design). Fix these, then re-run /rx-review ${ticket}:\n${detail}\n` +
+          `(skills/pseudocode-design in the pi-rx plugin). Fix these, then re-run /rx-review ${ticket}:\n${detail}\n` +
           `The artifact MUST use only these \`##\` headings — Context / Design / Diagrams / Open Questions — ` +
           `with Context, Design, and Open Questions present, and all decisions folded inline into the Design list. See pseudocode-structure.md in the pi-rx plugin.`,
       );

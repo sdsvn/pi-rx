@@ -13,15 +13,33 @@
 </p>
 
 <p>
-  <a href="#-why-its-opinionated">The story</a> ·
-  <a href="#-quick-start">Quick start</a> ·
+  <a href="#-get-started"><b>Get started</b></a> ·
   <a href="#-how-a-ticket-flows">How it flows</a> ·
-  <a href="#-works-best-with">Works best with</a> ·
-  <a href="#-ticket-sources">Ticket sources</a> ·
+  <a href="#-why-its-opinionated">Why</a> ·
+  <a href="#-customize">Customize</a> ·
   <a href="#-commands">Commands</a>
 </p>
 
 </div>
+
+## 🚀 Get started
+
+```bash
+pi install git:github.com/sdsvn/pi-rx       # pi
+omp plugin install github:sdsvn/pi-rx       # or omp
+```
+
+Then, in any git repository:
+
+```text
+/rx ENG-1234                          # a Linear ticket (or its URL)
+/rx #123                              # a GitHub issue
+/rx add retry to the webhook sender   # or just say what you want
+```
+
+That's it. `/rx` sees where the ticket is and runs the next step. You need `git` and a signed-in
+`gh`; everything else is [optional](#-customize). Using Jira or GitLab?
+[One line of config](#-ticket-sources).
 
 ## 📖 Why it's opinionated
 
@@ -49,11 +67,7 @@ your approval, then code. It isn't a loose toolkit you assemble yourself.
 
 ## 🩺 What it does
 
-```text
-/rx ENG-1234
-```
-
-That's it. Rx sets up an isolated worktree, writes a test plan and a **pseudocode design**, and puts
+Rx sets up an isolated worktree, writes a test plan and a **pseudocode design**, and puts
 that design in front of you. Nothing gets implemented until you approve it. After that it writes the
 code, opens the PR, and watches CI and review comments until the PR merges.
 
@@ -73,7 +87,7 @@ flowchart LR
 
 > [!NOTE]
 > Rx also works best with a handful of tools ([Co-Review](https://sdsvn.github.io/co-review/), [Herdr](https://herdr.dev/), [ntfy.sh](https://ntfy.sh) and others). **None of them are
-> required**: without each one, Rx falls back to something simpler. See [Works best with](#-works-best-with).
+> required**: without each one, Rx falls back to something simpler. See [Customize](#-customize).
 
 ## ✨ What you get
 
@@ -85,47 +99,6 @@ flowchart LR
 | 🔌 **Works with your tracker** | Linear, Jira, GitHub and GitLab built in. Name yours in one line of config, or teach Rx a new one with a short markdown file. |
 | 📈 **It learns from your corrections** | Every rejection, rework, and requested change is logged with its reason. `/rx-retro` turns patterns into fixes. |
 | 🪶 **Tiny footprint** | One TypeScript file plus markdown playbooks. No dependencies, no build: pi and omp run the source. |
-
-## 🚀 Quick start
-
-Rx runs in both [pi](https://pi.dev) and omp.
-
-**1a. pi:** one command installs the extension and its bundled `pseudocode-design` skill:
-
-```bash
-pi install git:github.com/sdsvn/pi-rx
-```
-
-**1b. omp:** clone it, then register it in `~/.omp/agent/config.yml`. The `skills` entry loads the
-bundled `pseudocode-design` skill, which Rx uses for its design docs:
-
-```bash
-git clone https://github.com/sdsvn/pi-rx ~/projects/pi-rx
-```
-
-```yaml
-extensions:
-  - ~/projects/pi-rx
-skills:
-  enabled: true
-  customDirectories:
-    - ~/projects/pi-rx/skills
-```
-
-**2. Go.** Restart pi or omp, then from inside any git repository:
-
-```text
-/rx ENG-1234                          # a Linear ticket (or its URL)
-/rx #123                              # a GitHub issue
-/rx add retry to the webhook sender   # or just say what you want
-```
-
-A plain-text task gets a short id (`add-retry-webhook-sender`); type it again, even reworded, and Rx
-picks up the same task. Using Jira, GitLab or something else? [Set your ticketing system](#-ticket-sources).
-
-`/rx` is the only command you need to remember. It sees where the ticket is and runs the next step.
-
-**Requirements:** pi or omp, `git`, and `gh` (signed in).
 
 ## 🔄 How a ticket flows
 
@@ -153,83 +126,6 @@ archives the spec deltas.
 
 > [!TIP]
 > Changed your mind? `/rx-abort ENG-1234` abandons a ticket at any phase and tears everything down.
-
-## 🧩 Works best with
-
-All optional. Here's what each one adds and what you get without it.
-
-| | What it adds | Without it |
-|---|---|---|
-| 🔍 **[Co-Review](https://sdsvn.github.io/co-review/)** | Design review in a native app, with threaded comments the agent replies to. | A local HTML review page (needs `python3`). Same gate, but no reply threads, so the agent answers in chat. |
-| 🪟 **[Herdr](https://herdr.dev/)** + `jq` | A workspace per ticket, plus a PR watcher that fixes CI and trivial comments on its own. | No watcher. You check the PR and run `/rx-rework` or `/rx-cleanup` yourself. |
-| 📱 **[ntfy.sh](https://ntfy.sh)** via pi-notify | Phone notifications when Rx is waiting on you. Reply "approve" from your phone. | You check back in the terminal. |
-| 📋 **Linear MCP** | `/rx ENG-1234` and Linear URLs read the ticket directly. | Use GitHub issues, plain text, or [your own ticket source](#-ticket-sources). |
-| 📜 **[OpenSpec](https://openspec.dev/)** | Durable spec deltas per change, archived on merge. | The spec step is skipped. |
-
-> [!IMPORTANT]
-> Install Co-Review for the best review experience. Rx tells you when it's falling back to the HTML page.
-
-## 🎫 Ticket sources
-
-Rx isn't tied to Linear. Tell it which ticketing system you use, and it fetches tickets from there.
-
-### Pick your ticketing system
-
-Put a `.rx/config.yml` in your repo (commit it and the whole team gets it), or
-`~/.config/rx/config.yml` for yourself:
-
-```yaml
-tickets: linear                # your default: linear (default), jira, github, gitlab, or your own
-ticket_shape: ^(ENG|OPS)-\d+$  # optional: what your ticket ids look like
-```
-
-- **`tickets`**: bare ids like `ENG-123` go to this system. URLs always go to the system they
-  belong to, so a GitHub issue link still works when Linear is the default.
-- **`ticket_shape`**: a regex for your ids, case-insensitive. Without it, anything shaped like
-  `KEY-123` is a ticket. Set it when your ids look different, or so that only your own projects
-  count. The id is the whole match, or the `(?<id>…)` group if there is one: GitLab-style `#123` is
-  `tickets: gitlab` with `ticket_shape: ^#(?<id>\d+)$`.
-
-The repo's config wins over yours.
-
-### Bundled sources
-
-| Source | Recognises | Fetches with |
-|---|---|---|
-| [`linear`](./sources/linear.md) | `ENG-1234` (the default), `linear.app/…/issue/ENG-1234` | Linear MCP `get_issue`, or the `linear` CLI |
-| [`jira`](./sources/jira.md) | `PROJ-123` with `tickets: jira`, `…atlassian.net/browse/PROJ-123` | Atlassian MCP `getJiraIssue`, or a Jira CLI |
-| [`github`](./sources/github.md) | `#123`, `gh-123`, `owner/repo#123`, issue URLs | `gh issue view` |
-| [`gitlab`](./sources/gitlab.md) | `gl-123`, issue URLs (`#123` with the shape above) | `glab issue view` |
-| [`text`](./sources/text.md) | anything else | your own words are the requirement |
-
-### Add your own
-
-A source is a small markdown file: patterns that recognise what you typed, and a prompt telling the
-agent how to fetch the story. Put it in `.rx/sources/<name>.md` (repo) or `~/.config/rx/sources/`:
-
-```markdown
----
-name: shortcut
-description: Shortcut stories — sc-123 or a story URL.
-match:
-  - ^https://app\.shortcut\.com/[^/]+/story/(\d+)
-  - ^sc-(\d+)$
-id: sc-$1
----
-Fetch Shortcut story **$ID** (number $1) from the Shortcut API:
-`curl -s -H "Shortcut-Token: $SHORTCUT_API_TOKEN" https://api.app.shortcut.com/api/v3/stories/$1`.
-**title** = the story name. **requirement** = its description, word for word.
-Not found? Ask the user to paste it.
-```
-
-- **`match`**: regexes tried on the first word you type (`flags: i` for case-insensitive).
-- **`id`**: the pipeline id built from the regex groups (`$1`); `case: upper` uppercases it. It names
-  the branch and the worktree.
-- **The body**: how to fetch the story, with `$ID`, `$REF` (exactly what you typed) and the groups
-  `$1`…`$9` filled in. End by saying what the **title** and **requirement** are.
-
-To send bare ids to it, set `tickets: shortcut` with a `ticket_shape` for them. A source with the same `name` as a bundled one
-replaces it, so you can also rewrite how Linear tickets are fetched.
 
 ## ⌨️ Commands
 
@@ -260,6 +156,94 @@ replaces it, so you can also rewrite how Linear tickets are fetched.
 
 </details>
 
+## 🎛️ Customize
+
+Everything here is optional. Rx works out of the box; these make it fit your setup.
+
+### 🧩 Works best with
+
+All optional. Here's what each one adds and what you get without it.
+
+| | What it adds | Without it |
+|---|---|---|
+| 🔍 **[Co-Review](https://sdsvn.github.io/co-review/)** | Design review in a native app, with threaded comments the agent replies to. | A local HTML review page (needs `python3`). Same gate, but no reply threads, so the agent answers in chat. |
+| 🪟 **[Herdr](https://herdr.dev/)** + `jq` | A workspace per ticket, plus a PR watcher that fixes CI and trivial comments on its own. | No watcher. You check the PR and run `/rx-rework` or `/rx-cleanup` yourself. |
+| 📱 **[ntfy.sh](https://ntfy.sh)** via pi-notify | Phone notifications when Rx is waiting on you. Reply "approve" from your phone. | You check back in the terminal. |
+| 📋 **Linear MCP** | `/rx ENG-1234` and Linear URLs read the ticket directly. | Use GitHub issues, plain text, or [your own ticket source](#-ticket-sources). |
+| 📜 **[OpenSpec](https://openspec.dev/)** | Durable spec deltas per change, archived on merge. | The spec step is skipped. |
+
+> [!IMPORTANT]
+> Install Co-Review for the best review experience. Rx tells you when it's falling back to the HTML page.
+
+### 🎫 Ticket sources
+
+Rx isn't tied to Linear. Tell it which ticketing system you use, and it fetches tickets from there.
+
+#### Pick your ticketing system
+
+Put a `.rx/config.yml` in your repo (commit it and the whole team gets it), or
+`~/.config/rx/config.yml` for yourself:
+
+```yaml
+tickets: linear                # your default: linear (default), jira, github, gitlab, or your own
+ticket_shape: ^(ENG|OPS)-\d+$  # optional: what your ticket ids look like
+```
+
+- **`tickets`**: bare ids like `ENG-123` go to this system. URLs always go to the system they
+  belong to, so a GitHub issue link still works when Linear is the default.
+- **`ticket_shape`**: a regex for your ids, case-insensitive. Without it, anything shaped like
+  `KEY-123` is a ticket. Set it when your ids look different, or so that only your own projects
+  count. The id is the whole match, or the `(?<id>…)` group if there is one: GitLab-style `#123` is
+  `tickets: gitlab` with `ticket_shape: ^#(?<id>\d+)$`.
+
+The repo's config wins over yours.
+
+#### Bundled sources
+
+| Source | Recognises | Fetches with |
+|---|---|---|
+| [`linear`](./sources/linear.md) | `ENG-1234` (the default), `linear.app/…/issue/ENG-1234` | Linear MCP `get_issue`, or the `linear` CLI |
+| [`jira`](./sources/jira.md) | `PROJ-123` with `tickets: jira`, `…atlassian.net/browse/PROJ-123` | Atlassian MCP `getJiraIssue`, or a Jira CLI |
+| [`github`](./sources/github.md) | `#123`, `gh-123`, `owner/repo#123`, issue URLs | `gh issue view` |
+| [`gitlab`](./sources/gitlab.md) | `gl-123`, issue URLs (`#123` with the shape above) | `glab issue view` |
+| [`text`](./sources/text.md) | anything else | your own words are the requirement |
+
+#### Add your own
+
+A source is a small markdown file: patterns that recognise what you typed, and a prompt telling the
+agent how to fetch the story. Put it in `.rx/sources/<name>.md` (repo) or `~/.config/rx/sources/`:
+
+```markdown
+---
+name: shortcut
+description: Shortcut stories — sc-123 or a story URL.
+match:
+  - ^https://app\.shortcut\.com/[^/]+/story/(\d+)
+  - ^sc-(\d+)$
+id: sc-$1
+---
+Fetch Shortcut story **$ID** (number $1) from the Shortcut API:
+`curl -s -H "Shortcut-Token: $SHORTCUT_API_TOKEN" https://api.app.shortcut.com/api/v3/stories/$1`.
+**title** = the story name. **requirement** = its description, word for word.
+Not found? Ask the user to paste it.
+```
+
+- **`match`**: regexes tried on the first word you type (`flags: i` for case-insensitive).
+- **`id`**: the pipeline id built from the regex groups (`$1`); `case: upper` uppercases it. It names
+  the branch and the worktree.
+- **The body**: how to fetch the story, with `$ID`, `$REF` (exactly what you typed) and the groups
+  `$1`…`$9` filled in. End by saying what the **title** and **requirement** are.
+
+To send bare ids to it, set `tickets: shortcut` with a `ticket_shape` for them. A source with the same `name` as a bundled one
+replaces it, so you can also rewrite how Linear tickets are fetched.
+
+### ⚙️ Environment variables
+
+| Variable | Effect |
+|---|---|
+| `RX_REVIEW_BIN` / `CO_REVIEW_CLI` | Path to the `co-review` CLI when it isn't on `PATH`. |
+| `RX_PSEUDOCODE_SKILL` | Use another copy of the `pseudocode-design` skill instead of the one bundled with Rx. |
+
 ## 🗂️ Where things live
 
 Rx never writes to your project. Everything it keeps is under `~/.claude/workflow/`, per repository
@@ -277,39 +261,21 @@ Rx never writes to your project. Everything it keeps is under `~/.claude/workflo
 The only Rx files in a repo are ones you choose to commit: `.rx/config.yml` and `.rx/sources/`
 (see [Ticket sources](#-ticket-sources)).
 
-<details>
-<summary><b>⚙️ Configuration</b></summary>
-
-<br>
-
-Ticketing settings live in `.rx/config.yml` (repo) or `~/.config/rx/config.yml` (you):
-
-| Key | Effect |
-|---|---|
-| `tickets` | Your default ticketing system; bare ticket ids go to it. Default `linear`. |
-| `ticket_shape` | Regex for what a bare ticket id looks like. Default: `KEY-123`. |
-
-Optional environment variables:
-
-| Variable | Effect |
-|---|---|
-| `RX_REVIEW_BIN` / `CO_REVIEW_CLI` | Path to the `co-review` CLI when it isn't on `PATH`. |
-| `RX_PSEUDOCODE_SKILL` | Where the `pseudocode-design` skill lives, if not in this repo's `skills/` or `~/.claude/skills/`. |
-
-</details>
-
-<details>
-<summary><b>🛠️ Development</b></summary>
-
-<br>
+## 🛠️ Development
 
 - `src/index.ts` is the extension: the state machine, the `rx_*` tools, the review, and the panel.
 - [`stages/`](./stages) holds the playbooks the agent follows at each step.
 - [`sources/`](./sources) holds the bundled ticket sources.
 - [`workflow/`](./workflow) holds the docs those playbooks read.
 
-pi and omp both run the source directly, so reload to pick up an edit. To work on a checkout in pi,
-install it from the local path: `pi install ~/projects/pi-rx`.
+pi and omp both run the source directly, so reload to pick up an edit. To work on a checkout,
+install it from the local path instead of GitHub:
+
+```bash
+git clone https://github.com/sdsvn/pi-rx ~/projects/pi-rx
+pi install ~/projects/pi-rx            # pi
+omp plugin link ~/projects/pi-rx       # omp
+```
 
 The extension is written against pi's API (TypeBox tool schemas, `@earendil-works/pi-ai`); omp loads it
 through its pi-compatibility layer and its injected `pi.typebox`, so one source serves both.
@@ -324,8 +290,6 @@ printf 'import {demo} from "%s/src/index.ts"; demo()\n' "$PWD" > /tmp/rx-demo.ts
 Before changing the workflow, read [`workflow/WORKFLOW.md`](./workflow/WORKFLOW.md) (summary,
 invariants, backlog). Every tool and surface is documented in
 [`workflow/REFERENCE.md`](./workflow/REFERENCE.md).
-
-</details>
 
 ## 📄 License
 

@@ -8,7 +8,7 @@ suffix (`## Design (notes)` ≠ `design`), is refused. `validatePseudocode()` (i
 to host a non-conforming artifact, and the `rx_pseudocode_check` tool lets `/rx-start` self-verify
 before the approval gate.
 
-This is the machine-checkable half of `skill://pseudocode-design` — read the skill for the design
+This is the machine-checkable half of the bundled `skills/pseudocode-design` skill — read the skill for the design
 discipline (altitude ladder, ≤4 children per node, decisions inline, markers). This file is the
 structural contract the tooling verifies.
 

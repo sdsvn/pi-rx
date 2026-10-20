@@ -49,9 +49,10 @@ Draft the test plan (what, which layer, explicit out-of-scope) and show the user
 - YAGNI applies to tests: plan the smallest set where each check fails on a plausible bug — no
   padding suites, no tests for trivial one-liners.
 
-## 4. Pseudocode design — skill://pseudocode-design
+## 4. Pseudocode design
 
-The hierarchical tree IS the design contract.
+Read the bundled skill `$RX_PLUGIN/skills/pseudocode-design/SKILL.md` first (it ships with Rx, so it's
+there whether or not the host registered it as a skill). The hierarchical tree IS the design contract.
 
 - **Discovery:** call `rx_discovery` with `ticket: $1` FIRST. Delegate the blast-radius scan to ONE
   read-only `scout` subagent so bulk source/graph/bundle content never enters this turn; hand it the
