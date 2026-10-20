@@ -17,6 +17,7 @@
   <a href="#-quick-start">Quick start</a> ·
   <a href="#-how-a-ticket-flows">How it flows</a> ·
   <a href="#-works-best-with">Works best with</a> ·
+  <a href="#-ticket-sources">Ticket sources</a> ·
   <a href="#-commands">Commands</a>
 </p>
 
@@ -107,10 +108,13 @@ skills:
 **3. Go.** Restart omp, then from inside any git repository:
 
 ```text
-/rx ENG-1234                          # a Linear ticket
-/rx https://linear.app/…/ENG-1234     # its URL
+/rx ENG-1234                          # a Linear ticket (or its URL)
+/rx #123                              # a GitHub issue
 /rx add retry to the webhook sender   # or just say what you want
 ```
+
+A plain-text task gets a short id (`add-retry-webhook-sender`); type it again, even reworded, and Rx
+picks up the same task. Using Jira, GitLab or something else? [Add a ticket source](#-ticket-sources).
 
 `/rx` is the only command you need to remember. It sees where the ticket is and runs the next step.
 
@@ -152,17 +156,56 @@ All optional. Here's what each one adds and what you get without it.
 | 🔍 **[Co-Review](https://sdsvn.github.io/co-review/)** | Design review in a native app, with threaded comments the agent replies to. | A local HTML review page (needs `python3`). Same gate, but no reply threads, so the agent answers in chat. |
 | 🪟 **[Herdr](https://herdr.dev/)** + `jq` | A workspace per ticket, plus a PR watcher that fixes CI and trivial comments on its own. | No watcher. You check the PR and run `/rx-rework` or `/rx-cleanup` yourself. |
 | 📱 **[ntfy.sh](https://ntfy.sh)** via pi-notify | Phone notifications when Rx is waiting on you. Reply "approve" from your phone. | You check back in the terminal. |
-| 📋 **Linear MCP** | `/rx ENG-1234` and Linear URLs read the ticket directly. | Use plain-text tasks: `/rx add retry to the webhook sender`. |
+| 📋 **Linear MCP** | `/rx ENG-1234` and Linear URLs read the ticket directly. | Use GitHub issues, plain text, or [your own ticket source](#-ticket-sources). |
 | 📜 **[OpenSpec](https://openspec.dev/)** | Durable spec deltas per change, archived on merge. | The spec step is skipped. |
 
 > [!IMPORTANT]
 > Install Co-Review for the best review experience. Rx tells you when it's falling back to the HTML page.
 
+## 🎫 Ticket sources
+
+Rx doesn't hard-code a ticket system. A **ticket source** is a small markdown file: a pattern that
+recognises what you typed, and a prompt telling the agent how to fetch the story. Rx ships three:
+
+| Source | Recognises | Fetches with |
+|---|---|---|
+| [`linear`](./sources/linear.md) | `ENG-1234`, `linear.app/…/issue/ENG-1234` | Linear MCP `get_issue` (or the `linear` CLI) |
+| [`github`](./sources/github.md) | `#123`, `gh-123`, `owner/repo#123`, issue URLs | `gh issue view` |
+| [`text`](./sources/text.md) | anything else | your own words are the requirement |
+
+Add your own as `.rx/sources/<name>.md` in a repo (commit it and your whole team gets it) or in
+`~/.config/rx/sources/` for yourself:
+
+```markdown
+---
+name: jira
+description: Jira issues — PROJ-123 or a browse URL.
+match:
+  - ^https://acme\.atlassian\.net/browse/([A-Z][A-Z0-9]+-\d+)
+  - ^([A-Z][A-Z0-9]+-\d+)$
+id: $1
+---
+Fetch Jira issue **$ID** with the Jira MCP `getJiraIssue` tool (or `jira issue view $ID --plain`).
+**title** = the summary. **requirement** = the description and acceptance criteria, word for word.
+Not found? Ask the user to paste it.
+```
+
+- **`match`** — regexes tried in order on the first word you type; `flags: i` makes them
+  case-insensitive.
+- **`id`** — the pipeline id built from the regex groups (`$1`, or e.g. `gh-$1`); `case: upper`
+  uppercases it. It names the branch and the worktree.
+- **The body** — what the agent does to fetch the story, with `$ID`, `$REF` (exactly what you typed)
+  and the groups `$1`…`$9` filled in. End it by saying what the **title** and **requirement** are.
+
+Sources are tried in order: the repo's, then `~/.config/rx/sources/`, then the bundled ones. So the
+Jira example above claims `PROJ-123` before the bundled Linear source sees it. A source with the same
+`name` as one further down replaces it.
+
 ## ⌨️ Commands
 
 | Command | |
 |---|---|
-| `/rx [ticket \| url \| text]` | **Run the next step.** Bare `/rx` drives the current ticket. Inside Herdr, it gives every active ticket its own workspace. |
+| `/rx [ticket \| url \| text]` | **Run the next step.** Bare `/rx` drives the current ticket. Inside Herdr, it gives every active ticket its own workspace. `/rx approve`, `/rx status`, `/rx reject "why"`… run that step on the current ticket. |
 | `/rx-review` | Reopen the design review (it opens by itself at the gate). |
 | `/rx-approve` · `/rx-reject "notes"` | Approve the design, or push back on it. |
 | `/rx-rework "summary"` | The PR needs real changes: back to the design gate. |

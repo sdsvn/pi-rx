@@ -1,12 +1,12 @@
 ---
-description: "Start the pipeline for an issue, ticket, or ad-hoc task: worktree + test plan + pseudocode design contract (live HTML review). Usage: /rx-start ENG-1234 or gh-123 or #123 (or /task <free text>)"
+description: "Start the pipeline for an issue, ticket, or ad-hoc task: worktree + test plan + pseudocode design contract (live HTML review). Usage: /rx-start ENG-1234, gh-123, #123, any id a ticket source recognises, or free text"
 ---
 
 Stage 1 of the pipeline for `$1` — design only, ending at a **human approval gate**. You do NOT
-write implementation code. `$1` is the canonical ticket or task id (Linear `ENG-1234`, GitHub `gh-123`,
-Jira `PROJ-56`, or a free-text task's kebab id like `add-retry-webhook-sender`); `$2` is the free-text
-requirement/note. State is owned by the
-plugin: read/mutate ONLY via the `rx_*` tools; bash is for real work (`git`, `gh`, `openspec`).
+write implementation code. `$1` is the canonical ticket or task id (Linear `ENG-1234`, GitHub
+`gh-123`, an id from a ticket source you added, or a free-text task's kebab id like
+`add-retry-webhook-sender`); `$2` is the free-text requirement/note. State is owned by the plugin:
+read/mutate ONLY via the `rx_*` tools; bash is for real work (`git`, `gh`, `openspec`).
 
 Announce: "Starting pipeline for `$1`."
 
@@ -21,11 +21,12 @@ Announce: "Starting pipeline for `$1`."
 
 ## 1. Requirement
 
-- GitHub issue (`gh-123` / `#123`): fetch with `gh issue view <number>`.
-- Linear ticket (`ENG-1234`): fetch with Linear MCP `get_issue` (or Linear CLI if available).
-- Jira / GitLab / Generic ticket: fetch via configured issue tool/CLI or ask user if incomplete.
-- Free-text task: the requirement is the user's own words (`$2`, also saved as the state's
-  `requirement`); if thin, confirm scope with the user.
+State already has a `requirement` (a resumed start) → use it and skip the fetch. Otherwise fetch the
+story the way its ticket source says:
+
+$RX_SOURCE
+
+- Can't get a usable requirement? **Stop** and ask the user. Never design from a guess.
 - Anything material beyond what's literally asked (incl. doc-only byproducts) → confirm with the user
   before folding it in.
 

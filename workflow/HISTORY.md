@@ -7,6 +7,14 @@ Invariants for what exists now). Append closed items and new learnings here, new
 
 ## Learnings log (durable insights; git has the commit detail)
 
+- **2026-10-21** — Free-text tasks were second-class: the id was the whole sentence behind a `task-`
+  prefix (branch, worktree, Space label), the requirement lived only in the one `/rx-start` turn (lost on
+  an interrupted start), `/rx approve` started a task called "approve", and a reworded request started a
+  duplicate. Fixed with short kebab ids, an intake file folded in by `rx_init`, stage words, and
+  `sameTask` matching. Then made the ticket system pluggable: a **ticket source** is a markdown file
+  (match regexes + id template + fetch prompt), so Linear is just the bundled default and a team commits
+  `.rx/sources/jira.md` instead of forking the playbook. Lesson: anything the user typed must be
+  persisted the moment it's interpreted, not left in a prompt.
 - **2026-10-20** — `/rx-review` no longer hard-requires Co-Review: with no `co-review` on PATH (and no
   `RX_REVIEW_BIN`/`CO_REVIEW_CLI`) it serves the pseudocode-design live HTML page instead, polling its
   `feedback.jsonl` into the same `handleFeedback`/`deliverComments` gate, and its notice recommends

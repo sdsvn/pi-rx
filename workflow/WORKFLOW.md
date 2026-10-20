@@ -50,8 +50,9 @@ Deterministic **Linear-ticket (or ad-hoc task) → merged PR** pipeline, with a 
   any non-terminal phase ──▶ aborted        # /rx-abort: abandon + tear the runtime down
 ```
 
-- **Entry forms** (`/rx`): bare `ENG-1234`, a Linear URL (id extracted), or free text (ad-hoc
-  `rx-<slug>` whose text *is* the requirement — no Linear).
+- **Entry forms** (`/rx`): anything a **ticket source** recognises (`sources/*.md` — Linear and
+  GitHub bundled; teams add `.rx/sources/*.md`), or free text (a short kebab id whose text *is* the
+  requirement). Linear is just the bundled default, not a dependency.
 - **Layers**: the `pi-rx` plugin *is* the workflow — bundled stage playbooks (`stages/rx-*.md`, injected
   by `/rx`) over the plugin's own state machine + `rx_*` tools (`src/index.ts`), with the docs the
   stages read bundled in `workflow/`. Companions (optional): `pi-notify` (push via ntfy). No portable bash layer.

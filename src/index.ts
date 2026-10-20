@@ -1134,26 +1134,117 @@ function readReviewState(dir: string, ticket: string): { round: number; verdict:
   };
 }
 
-const VALID_TICKET = /^(?:[A-Za-z0-9_]+-[0-9]+|gh-[0-9]+|#[0-9]+|(?!\.+\/)[a-zA-Z0-9_.]+\/(?!\.+#)[a-zA-Z0-9_.]+#\d+)$/;
 /** Any pipeline id: Linear/Jira ticket (ENG-1234, PROJ-56), GitHub issue (gh-123, #123),
  *  or a free-text task's kebab-case id (add-retry-webhook-sender; older ones carry task-/rx-/flow-). */
 const PIPELINE_ID = /^(?:[A-Za-z0-9_]+-[0-9]+|gh-[0-9]+|#[0-9]+|(?!\.+\/)[a-zA-Z0-9_.]+\/(?!\.+#)[a-zA-Z0-9_.]+#\d+|[a-z0-9][a-z0-9-]{0,47})$/;
 
-/** Resolve the first arg to a ticket/task id: Linear/Jira (ENG-1234), GitHub (#123, gh-123),
- *  Linear URL (`https://linear.app/.../issue/ENG-6182/slug`), or GitHub issue URL
- *  (`https://github.com/owner/repo/issues/123` → gh-123). Returns "" for free text. */
-function extractTicket(tok: string): string {
-  if (!tok) return "";
-  if (VALID_TICKET.test(tok)) return tok.startsWith("#") ? `gh-${tok.slice(1)}` : tok;
-  if (/^https?:\/\//i.test(tok)) {
-    // Linear URL
-    const mLin = tok.match(/\/([A-Za-z0-9_]+-\d+)(?:[/?#]|$)/);
-    if (mLin) return mLin[1].toUpperCase();
-    // GitHub Issue URL
-    const mGh = tok.match(/\/issues\/(\d+)(?:[/?#]|$)/);
-    if (mGh) return `gh-${mGh[1]}`;
+/** The plugin's own directory (bundled stages/, sources/, workflow/). */
+const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+/** A ticket source: how to recognise what the user typed and how to fetch its story. A markdown file
+ *  with frontmatter — `name`, `match` (regexes tried on the first word), `flags`, `id` (template over
+ *  the regex groups, default `$1`), `case` (upper/lower) — and a prompt body that /rx-start runs as its
+ *  requirement step, with `$ID`, `$REF` (what the user typed) and `$1`…`$9` filled in. Linear and
+ *  GitHub ship as sources/*.md; a team adds Jira, GitLab, Notion… the same way. */
+export type TicketSource = { name: string; description: string; match: RegExp[]; id: string; idCase: string; body: string; file: string };
+
+const unquote = (v: string) => v.trim().replace(/^(['"])(.*)\1$/, "$2");
+
+/** Parse one source file (no YAML dependency: `key: value` lines and `- item` lists). Null when it has
+ *  no frontmatter; an invalid regex is skipped, not fatal. Pure; tested in demo(). */
+export function parseSource(text: string, file: string): TicketSource | null {
+  const m = text.replace(/\r\n/g, "\n").match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  if (!m) return null;
+  const meta: Record<string, string | string[]> = {};
+  let listKey = "";
+  for (const line of m[1].split("\n")) {
+    const item = line.match(/^\s+-\s+(.*)$/);
+    if (item && listKey) {
+      (meta[listKey] as string[]).push(unquote(item[1]));
+      continue;
+    }
+    const kv = line.match(/^([A-Za-z_]+):\s*(.*)$/);
+    if (!kv) continue;
+    listKey = kv[2].trim() === "" ? kv[1] : "";
+    meta[kv[1]] = listKey ? [] : unquote(kv[2]);
   }
-  return "";
+  const flags = String(meta.flags ?? "").replace(/[^imsu]/g, "");
+  const match: RegExp[] = [];
+  for (const p of Array.isArray(meta.match) ? meta.match : meta.match ? [meta.match] : []) {
+    try {
+      match.push(new RegExp(p, flags));
+    } catch {
+      /* invalid pattern: skipped */
+    }
+  }
+  return {
+    name: String(meta.name ?? path.basename(file, ".md")),
+    description: String(meta.description ?? ""),
+    match,
+    id: String(meta.id ?? "$1"),
+    idCase: String(meta.case ?? ""),
+    body: m[2].trim(),
+    file,
+  };
+}
+
+/** Where sources are looked up, highest precedence first: the repo's `.rx/sources` (committed, shared
+ *  by a team), the user's `~/.config/rx/sources`, then the ones bundled with Rx. */
+function sourceDirs(repo: string | null): string[] {
+  const cfg = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+  return [...(repo ? [path.join(repo, ".rx", "sources")] : []), path.join(cfg, "rx", "sources"), path.join(PLUGIN_DIR, "sources")];
+}
+
+/** Every source in `dirs`, highest precedence first; a name in a higher dir hides the same name below
+ *  (so a team can replace the bundled linear source). Read fresh each call — they're tiny. */
+export function loadSources(dirs: string[]): TicketSource[] {
+  const out: TicketSource[] = [];
+  const seen = new Set<string>();
+  for (const d of dirs) {
+    let names: string[];
+    try {
+      names = fs.readdirSync(d).filter((n) => n.endsWith(".md")).sort();
+    } catch {
+      continue;
+    }
+    for (const n of names) {
+      const f = path.join(d, n);
+      let src: TicketSource | null = null;
+      try {
+        src = parseSource(fs.readFileSync(f, "utf8"), f);
+      } catch {
+        /* unreadable: skipped */
+      }
+      if (src && !seen.has(src.name)) {
+        seen.add(src.name);
+        out.push(src);
+      }
+    }
+  }
+  return out;
+}
+
+/** Match the first word the user typed against the sources in order: the source and the pipeline id
+ *  its `id` template builds. Null = free text. Pure; tested in demo(). */
+export function matchSource(tok: string, sources: TicketSource[]): { source: TicketSource; id: string } | null {
+  if (!tok) return null;
+  for (const source of sources)
+    for (const re of source.match) {
+      const m = tok.match(re);
+      if (!m) continue;
+      let id = source.id.replace(/\$(\d)/g, (_, i) => m[+i] ?? "");
+      if (source.idCase === "upper") id = id.toUpperCase();
+      else if (source.idCase === "lower") id = id.toLowerCase();
+      if (PIPELINE_ID.test(id)) return { source, id };
+    }
+  return null;
+}
+
+/** A source's prompt for one ticket: `$ID`, `$REF` and the regex groups `$1`…`$9` (re-matched from
+ *  `$REF`) filled in. Pure; tested in demo(). */
+export function renderSource(source: TicketSource, id: string, ref: string): string {
+  const m = source.match.map((re) => ref.match(re)).find(Boolean);
+  return source.body.replace(/\$(ID|REF|\d)/g, (_, k: string) => (k === "ID" ? id : k === "REF" ? ref : (m?.[+k] ?? "")));
 }
 
 /** `/rx <word>` runs the stage instead of starting a task called "<word>"; the NOTE_STAGES also take
@@ -2280,7 +2371,7 @@ export default function piRx(pi: ExtensionAPI) {
   // matching stage playbook, so you never type the stage yourself. Playbooks are BUNDLED with the
   // plugin (stages/), so the workflow is self-contained — no dependency on ~/.claude/commands
   // or ~/.claude/workflow. Bundled assets the playbooks read (workflow/*.md) resolve via $RX_PLUGIN.
-  const PLUGIN_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const PLUGIN_ROOT = PLUGIN_DIR;
   const STAGES_DIR = path.join(PLUGIN_ROOT, "stages");
   function dispatch(cmd: string, ticket: string, note: string) {
     if (ticket) {
@@ -2301,12 +2392,28 @@ export default function piRx(pi: ExtensionAPI) {
     // Same substitution pi does when expanding a slash command's $1/$2, plus $RX_PLUGIN → the plugin
     // root so bundled playbooks read their bundled assets (workflow/*.md) with no ~/.claude dependency.
     body = body.replaceAll("$RX_PLUGIN", PLUGIN_ROOT).replaceAll("$1", ticket).replaceAll("$2", note);
+    // Last, so ticket text in the source prompt is never touched by the $1/$2 substitution above.
+    if (cmd === "start") body = body.replaceAll("$RX_SOURCE", sourcePrompt(ticket, ui?.cwd || process.cwd()));
     pi.sendUserMessage(body);
     return true;
   }
 
+  /** The requirement step for /rx-start: the ticket's source prompt (recorded at intake, else matched
+   *  from the id — legacy states and resumes), rendered for this ticket. */
+  function sourcePrompt(ticket: string, cwd: string): string {
+    const dir = repoStateDir(cwd);
+    const st = dir ? readStates(dir).find((s) => s.ticket === ticket) : undefined;
+    const intake = dir ? readIntake(dir, ticket) : null;
+    const sources = loadSources(sourceDirs(repoRoot(cwd)));
+    const name = st?.source ?? intake?.source ?? matchSource(ticket, sources)?.source.name ?? "text";
+    const ref = st?.source_ref ?? intake?.source_ref ?? ticket;
+    const src = sources.find((s) => s.name === name);
+    if (!src) return `No ticket source named "${name}" is installed. Ask the user for ${ticket}'s requirement.`;
+    return `Ticket source: **${src.name}** (\`${src.file}\`)\n\n${renderSource(src, ticket, ref)}`;
+  }
+
   pi.registerCommand("rx", {
-    description: "Do the next Rx stage. Accepts a ticket id, a Linear URL, or a free-text task.",
+    description: "Do the next Rx stage. Accepts a ticket id or URL (Linear, GitHub, or any ticket source you add), or a free-text task.",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       ui = ctx;
       const dir = repoStateDir(ctx.cwd || process.cwd());
@@ -2331,7 +2438,15 @@ export default function piRx(pi: ExtensionAPI) {
         return;
       }
       // An id this repo already tracks wins over every other reading (free-text ids look like plain words).
-      let ticket = toks[0] && active.some((s) => s.ticket === toks[0]) ? toks[0] : extractTicket(toks[0] ?? "");
+      let ticket = "";
+      if (toks[0] && active.some((s) => s.ticket === toks[0])) ticket = toks[0];
+      else {
+        const hit = matchSource(toks[0] ?? "", loadSources(sourceDirs(repoRoot(ctx.cwd || process.cwd()))));
+        if (hit) {
+          ticket = hit.id;
+          if (!readStates(dir).some((s) => s.ticket === ticket)) writeIntake(dir, ticket, { source: hit.source.name, source_ref: toks[0] });
+        }
+      }
       let note = "";
       let startDesc = ""; // free text: the requirement handed to rx-start as $2
       if (ticket) {
@@ -2482,8 +2597,13 @@ export default function piRx(pi: ExtensionAPI) {
     const toks = raw.split(/\s+/).filter(Boolean);
     const dir = repoStateDir(ui?.cwd || process.cwd());
     const states = dir ? readStates(dir) : [];
-    const first = toks[0] && states.some((s) => s.ticket === toks[0]) ? toks[0] : extractTicket(toks[0] ?? "");
-    if (first) return { ticket: first, note: toks.slice(1).join(" ") };
+    if (toks[0] && states.some((s) => s.ticket === toks[0])) return { ticket: toks[0], note: toks.slice(1).join(" ") };
+    const hit = matchSource(toks[0] ?? "", loadSources(sourceDirs(repoRoot(ui?.cwd || process.cwd()))));
+    if (hit) {
+      if (cmd === "start" && dir && !states.some((s) => s.ticket === hit.id))
+        writeIntake(dir, hit.id, { source: hit.source.name, source_ref: toks[0] });
+      return { ticket: hit.id, note: toks.slice(1).join(" ") };
+    }
     if (cmd === "start" && raw && dir) {
       // Free-text task: the text IS the requirement — record it before the start runs.
       const t = textTaskId(dir, raw);
@@ -3083,15 +3203,42 @@ export function demo() {
   if (!ab.ok || ab.state?.phase !== "aborted") bad.push("approved→aborted (early abort) must be allowed");
 
   // /rx and /task argument classification
-  if (extractTicket("ENG-6182") !== "ENG-6182") bad.push("bare id not recognized");
-  if (extractTicket("PROJ-99") !== "PROJ-99") bad.push("Jira id not recognized");
-  if (extractTicket("gh-123") !== "gh-123") bad.push("GitHub issue gh-123 not recognized");
-  if (extractTicket("#456") !== "gh-456") bad.push("GitHub #456 not normalized");
-  if (extractTicket("https://linear.app/acme/issue/ENG-6182/split-groups") !== "ENG-6182")
-    bad.push("ticket not extracted from Linear URL");
-  if (extractTicket("https://github.com/myorg/myrepo/issues/789") !== "gh-789")
-    bad.push("ticket not extracted from GitHub URL");
-  if (extractTicket("improve logging") !== "") bad.push("free text must not read as a ticket");
+  {
+    // Bundled ticket sources: Linear and GitHub recognised as before, free text falls through.
+    const srcs = loadSources([path.join(PLUGIN_DIR, "sources")]);
+    const id = (tok: string) => matchSource(tok, srcs)?.id ?? "";
+    const via = (tok: string) => matchSource(tok, srcs)?.source.name ?? "";
+    if (!["github", "linear", "text"].every((n) => srcs.some((x) => x.name === n))) bad.push(`bundled sources missing: ${srcs.map((x) => x.name)}`);
+    if (id("ENG-6182") !== "ENG-6182" || via("ENG-6182") !== "linear") bad.push("bare Linear id not recognized");
+    if (id("eng-6182") !== "ENG-6182") bad.push("lowercase Linear id not uppercased");
+    if (id("https://linear.app/acme/issue/ENG-6182/split-groups") !== "ENG-6182") bad.push("ticket not extracted from Linear URL");
+    if (id("PROJ-99") !== "PROJ-99") bad.push("Jira-shaped id not recognized");
+    if (id("gh-123") !== "gh-123" || via("gh-123") !== "github") bad.push("GitHub issue gh-123 not recognized");
+    if (id("#456") !== "gh-456") bad.push("GitHub #456 not normalized");
+    if (id("acme/web.app#12") !== "gh-12") bad.push("owner/repo#N not recognized");
+    if (id("https://github.com/myorg/myrepo/issues/789") !== "gh-789") bad.push("ticket not extracted from GitHub URL");
+    if (id("improve") !== "" || id("") !== "") bad.push("free text must not read as a ticket");
+    const gh = srcs.find((x) => x.name === "github")!;
+    const out = renderSource(gh, "gh-789", "https://github.com/myorg/myrepo/issues/789");
+    if (!out.includes("gh issue view 789") || !out.includes("myorg/myrepo/issues/789")) bad.push("github prompt not rendered");
+    const lin = renderSource(srcs.find((x) => x.name === "linear")!, "ENG-6182", "eng-6182");
+    if (!lin.includes("get_issue") || !lin.includes("**ENG-6182**")) bad.push("linear prompt not rendered");
+    // A team source shadows a bundled one of the same name, and comes first.
+    const team = parseSource("---\nname: linear\nmatch:\n  - ^([A-Z]+-\\d+)$\nid: $1\n---\nUse Jira for $ID.", "team/linear.md")!;
+    if (!team || team.match.length !== 1 || team.body !== "Use Jira for $ID.") bad.push("source frontmatter not parsed");
+    {
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "rx-src-"));
+      fs.writeFileSync(path.join(tmp, "jira.md"), "---\nname: linear\nmatch:\n  - ^([A-Z]+-\\d+)$\n---\nUse Jira for $ID.");
+      const layered = loadSources([tmp, path.join(PLUGIN_DIR, "sources")]);
+      if (layered.filter((x) => x.name === "linear").length !== 1 || !renderSource(matchSource("ENG-1", layered)!.source, "ENG-1", "ENG-1").includes("Use Jira"))
+        bad.push("a team source doesn't shadow the bundled one of the same name");
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+    if (parseSource("no frontmatter", "x.md") !== null) bad.push("file without frontmatter accepted as a source");
+    const bad1 = parseSource("---\nname: x\nmatch:\n  - ([\n---\nbody", "x.md");
+    if (!bad1 || bad1.match.length !== 0) bad.push("invalid regex not skipped");
+    if (matchSource("../../etc", [parseSource("---\nname: evil\nmatch:\n  - ^(.*)$\n---\nx", "e.md")!]) !== null) bad.push("source id escaped PIPELINE_ID");
+  }
   if (slugId("improve logging and tracing") !== "improve-logging-tracing") bad.push(`ad-hoc slug wrong: ${slugId("improve logging and tracing")}`);
   if (slugId("Add retry to the webhook sender, please!") !== "add-retry-webhook-sender") bad.push("slug keeps filler or punctuation");
   if (slugId("the") !== "the" || slugId("!!!") !== "task") bad.push("slug of all-filler / no-word text wrong");
