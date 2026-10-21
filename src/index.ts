@@ -1187,11 +1187,15 @@ export function parseSource(text: string, file: string): TicketSource | null {
   };
 }
 
+/** The user's Rx config dir: `$XDG_CONFIG_HOME/rx`, else `~/.config/rx`. */
+function userConfigDir(): string {
+  return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "rx");
+}
+
 /** Where sources are looked up, highest precedence first: the repo's `.rx/sources` (committed, shared
  *  by a team), the user's `~/.config/rx/sources`, then the ones bundled with Rx. */
 function sourceDirs(repo: string | null): string[] {
-  const cfg = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
-  return [...(repo ? [path.join(repo, ".rx", "sources")] : []), path.join(cfg, "rx", "sources"), path.join(PLUGIN_DIR, "sources")];
+  return [...(repo ? [path.join(repo, ".rx", "sources")] : []), path.join(userConfigDir(), "sources"), path.join(PLUGIN_DIR, "sources")];
 }
 
 /** Every source in `dirs`, highest precedence first; a name in a higher dir hides the same name below
@@ -1257,9 +1261,21 @@ export function parseConfig(text: string): RxConfig {
   return out;
 }
 
+/** `text` with `key: value` set: the key's line replaced in place, appended when absent, dropped when
+ *  `value` is empty; every other line kept. Null when `parseConfig` would read the value back
+ *  differently (a ` #` tail, a newline, surrounding quotes) — refuse rather than invent quoting.
+ *  Pure; tested in demo(). */
+export function setConfigValue(text: string, key: keyof RxConfig, value: string): string | null {
+  const lines = text ? text.replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n") : [];
+  let done = false;
+  const out = lines.flatMap((l) => (l.match(/^([A-Za-z_]+):/)?.[1] !== key ? [l] : value && !done ? ((done = true), [`${key}: ${value}`]) : []));
+  if (value && !done) out.push(`${key}: ${value}`);
+  const next = out.length ? `${out.join("\n")}\n` : "";
+  return (parseConfig(next)[key] ?? "") === value ? next : null;
+}
+
 function readConfig(repo: string | null): RxConfig {
-  const cfg = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
-  const files = [path.join(cfg, "rx", "config.yml"), ...(repo ? [path.join(repo, ".rx", "config.yml")] : [])];
+  const files = [path.join(userConfigDir(), "config.yml"), ...(repo ? [path.join(repo, ".rx", "config.yml")] : [])];
   let out: RxConfig = {};
   for (const f of files) {
     try {
@@ -2089,6 +2105,67 @@ export default async function piRx(pi: ExtensionAPI) {
       } catch (e) {
         return { content: [{ type: "text", text: `rx: could not write DECISIONS.md — ${e instanceof Error ? e.message : e}` }], isError: true };
       }
+    },
+  });
+
+  pi.registerTool({
+    name: "rx_config",
+    label: "Rx Config",
+    description:
+      "Set the default ticketing system when the user names it in plain words (\"we use Jira\", \"our ids look " +
+      "like PAY-12\") — no file editing needed. tickets = a ticket source name (bare ids like ENG-123 go there; " +
+      "linear when unset). ticket_shape = a case-insensitive regex for bare ids (its (?<id>…) group, if any, is " +
+      "the id); an empty string clears it. scope 'user' (default, ~/.config/rx/config.yml) or 'repo' " +
+      "(<repo>/.rx/config.yml, written, not committed; overrides user). Validates before writing; reports the " +
+      "effective config.",
+    parameters: Type.Object({
+      tickets: Type.Optional(Type.String({ description: "Ticket source name: linear, jira, github, gitlab, or one the user added." })),
+      ticket_shape: Type.Optional(Type.String({ description: "Bare-id regex, e.g. ^(PAY|OPS)-\\d+$. Empty string clears it." })),
+      scope: Type.Optional(stringEnum(["user", "repo"], "Where to save: user (default) or repo.")),
+    }),
+    async execute(_id, rawParams, _signal, _onUpdate, ctx) {
+      const p = rawParams as { tickets?: string; ticket_shape?: string; scope?: "user" | "repo" };
+      const fail = (text: string) => ({ content: [{ type: "text" as const, text: `rx: ${text}` }], isError: true });
+      const repo = repoRoot(ctx.cwd || process.cwd());
+      const changes: [keyof RxConfig, string][] = [];
+      if (p.tickets !== undefined) changes.push(["tickets", p.tickets.trim()]);
+      if (p.ticket_shape !== undefined) changes.push(["ticket_shape", p.ticket_shape.trim()]);
+      if (!changes.length) return fail("nothing to set — pass tickets and/or ticket_shape.");
+      const names = loadSources(sourceDirs(repo)).map((s) => s.name);
+      if (p.tickets !== undefined && !names.includes(p.tickets.trim())) return fail(`no ticket source named "${p.tickets}" — installed: ${names.join(", ")}.`);
+      if (p.ticket_shape?.trim())
+        try {
+          new RegExp(p.ticket_shape.trim(), "i");
+        } catch (e) {
+          return fail(`ticket_shape is not a valid regex — ${e instanceof Error ? e.message : e}`);
+        }
+      if (p.scope === "repo" && !repo) return fail("not inside a git repo — use scope user.");
+      const repoFile = repo ? path.join(repo, ".rx", "config.yml") : null;
+      const file = p.scope === "repo" ? repoFile! : path.join(userConfigDir(), "config.yml");
+      let text = "";
+      try {
+        text = fs.readFileSync(file, "utf8");
+      } catch {
+        /* absent: start empty */
+      }
+      for (const [k, v] of changes) {
+        const next = setConfigValue(text, k, v);
+        if (next === null) return fail(`${k} ${JSON.stringify(v)} can't be stored as a config line (no newlines, " #", or surrounding quotes).`);
+        text = next;
+      }
+      try {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, text);
+      } catch (e) {
+        return fail(`could not write ${file} — ${e instanceof Error ? e.message : e}`);
+      }
+      const eff = readConfig(repo);
+      // A user-scope value the repo's config overrides does nothing here — say so, or "I set Jira" silently lies.
+      const shadowed = changes.filter(([k, v]) => (eff[k] ?? "") !== v).map(([k]) => k);
+      const saved = changes.map(([k, v]) => (v ? `${k}: ${v}` : `${k} cleared`)).join(", ");
+      const now = `tickets ${eff.tickets ?? "linear (default)"}, ticket_shape ${eff.ticket_shape ?? "built-in KEY-123"}`;
+      const warn = shadowed.length ? ` ⚠ ${repoFile} overrides ${shadowed.join(", ")} in this repo.` : "";
+      return { content: [{ type: "text", text: `rx: saved ${saved} to ${file}. In effect: ${now}.${warn}` }], details: { file, effective: eff, shadowed } };
     },
   });
 
@@ -3298,6 +3375,13 @@ export function demo() {
     const conf = parseConfig("# team\ntickets: jira   # our tracker\nticket_shape: '^(PAY)-\\d+$'  # ids\nempty:\n");
     if (parseConfig("ticket_shape: ^#(?<id>\\d+)$").ticket_shape !== "^#(?<id>\\d+)$") bad.push("config # inside a value stripped");
     if (conf.tickets !== "jira" || conf.ticket_shape !== "^(PAY)-\\d+$" || "empty" in conf) bad.push(`config not parsed: ${JSON.stringify(conf)}`);
+    // rx_config's writer: in-place replace keeps every other line, append, empty clears, refuse what won't round-trip.
+    const cfgText = "# team\ntickets: linear\nticket_shape: ^#(?<id>\\d+)$  # gitlab\n";
+    if (setConfigValue(cfgText, "tickets", "jira") !== "# team\ntickets: jira\nticket_shape: ^#(?<id>\\d+)$  # gitlab\n") bad.push("setConfigValue replace lost other lines");
+    if (setConfigValue("# team", "tickets", "jira") !== "# team\ntickets: jira\n" || setConfigValue("", "tickets", "jira") !== "tickets: jira\n") bad.push("setConfigValue append wrong");
+    if (setConfigValue(cfgText, "ticket_shape", "") !== "# team\ntickets: linear\n") bad.push("setConfigValue empty value didn't clear");
+    if (parseConfig(setConfigValue("", "ticket_shape", "^#(?<id>\\d+)$") ?? "").ticket_shape !== "^#(?<id>\\d+)$") bad.push("gitlab shape doesn't round-trip");
+    if (["jira\nticket_shape: x", "jira #x", "'jira'"].some((v) => setConfigValue(cfgText, "tickets", v) !== null)) bad.push("setConfigValue stored a value that won't read back");
     if (id("ENG-6182") !== "ENG-6182" || via("ENG-6182") !== "linear") bad.push("bare Linear id not recognized");
     if (id("eng-6182") !== "ENG-6182") bad.push("lowercase Linear id not uppercased");
     if (id("https://linear.app/acme/issue/ENG-6182/split-groups") !== "ENG-6182") bad.push("ticket not extracted from Linear URL");
