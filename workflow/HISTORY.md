@@ -7,6 +7,11 @@ Invariants for what exists now). Append closed items and new learnings here, new
 
 ## Learnings log (durable insights; git has the commit detail)
 
+- **2026-10-21** — Picking a ticketing system still meant editing a YAML file by hand. Added `rx_config`:
+  the user says "we use Jira" and the agent saves it (user config by default, repo on request). Two
+  traps it closes: a value the line parser would misread (` #` tail, newline, quotes) is refused by
+  round-tripping through `parseConfig` instead of inventing quoting, and a user-scope write the repo's
+  config overrides is reported, or "I set Jira" would silently change nothing. No config still means Linear.
 - **2026-10-21** — Made Rx run in pi as well as omp. Three things blocked pi: a static
   `@oh-my-pi/pi-ai` import (now a lazy import that tries omp's then pi's package), tool schemas built
   with omp's `pi.zod` (now TypeBox: `pi.typebox` on omp, the `typebox` package on pi; enums as

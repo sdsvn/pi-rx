@@ -206,7 +206,12 @@ ticket_shape: ^(ENG|OPS)-\d+$  # optional: what your ticket ids look like
   count. The id is the whole match, or the `(?<id>…)` group if there is one: GitLab-style `#123` is
   `tickets: gitlab` with `ticket_shape: ^#(?<id>\d+)$`.
 
-The repo's config wins over yours.
+The repo's config wins over yours. No config is fine too: bare ids then go to Linear.
+
+Or skip the file and just tell the agent — "we use Jira", "our ids look like PAY-12". It saves
+the setting with the `rx_config` tool: to your config by default, or to the repo's `.rx/config.yml`
+if you say so (written, not committed). It checks the source exists and the regex compiles, and
+tells you when the repo's config overrides what you just set.
 
 #### Bundled sources
 
