@@ -68,19 +68,26 @@ there whether or not the host registered it as a skill). The hierarchical tree I
   has no bulk. Map-first stays binding either way; anchors still get verified. The pseudocode may be
   a short tree: a few `Context` lines, a handful of `Design` bullets, no `Diagrams`. Never pad a
   small design to look thorough — the gate reviews substance, not length.
+- **Size:** `rx_set {size: small|medium|large}` before writing. It sets the Design bullet cap
+  `rx_pseudocode_check` enforces (8 / 16 / 24; unset = small). Fast path is `small`.
+- **Write it like a lazy developer — only what's necessary.** The design lists only behaviour that
+  changes. Leave out unchanged parts, tests (they're in `test_plan`) and docs (OpenSpec Impact lists
+  affected files). A reason after an em dash is one short clause, and only when it isn't obvious.
+  Keep a `✎`/`⚠` bullet only if the reviewer could reject the design because of it.
 - Reachability / only-path claims cite the proving `file:line`, verified before the gate.
 - **Design the laziest solution that works.** Climb, stop at the first rung that holds: need to
   exist at all (YAGNI)? → existing helper/pattern in THIS repo? → stdlib? → native platform / DB
   constraint over app code? → already-installed dep? → one line? → only then new minimal code. No
   abstraction with one user, no scaffolding "for later", no new dependency the design can avoid.
-  Deliberate corner-cut with a known ceiling → name the ceiling + upgrade path as a `## Design`
-  bullet. Never simplify away trust-boundary validation, data-loss error handling, or security.
+  Deliberate corner-cut with a known ceiling → name the ceiling + upgrade path in one `## Design`
+  bullet, not a paragraph. Never simplify away trust-boundary validation, data-loss error handling, or security.
 - Write `<details.paths.artifacts_dir>/$1.pseudocode.md` (never inside the repo tree);
   `rx_set {pseudocode}`.
 - Structure contract: use ONLY `## Context`, `## Design`, `## Diagrams`, `## Open Questions`.
   `Context`, `Design`, and `Open Questions` are required; `Diagrams` only when it contains a
   ` ```mermaid ` fence. See `pseudocode-structure.md` beside this file.
-- Run `rx_pseudocode_check` until ok. Drive every open `?` to resolution with the user.
+- **Self-check:** delete every bullet the reviewer would not challenge. Then run
+  `rx_pseudocode_check` until ok (it also checks size and names each offending line). Drive every open `?` to resolution with the user.
 - This stage overrides the skill's generic storage/review defaults: one artifact only, at the path
   above; no second repo-local copy. Review still happens via the plugin-owned surface — §6 opens it
   with `rx_review_open`.
@@ -91,6 +98,10 @@ there whether or not the host registered it as a skill). The hierarchical tree I
 `rx_set {openspec_change}`. Author under `<changesDir>/<CH>/`: `proposal.md`,
 `specs/<capability>/spec.md` (ADDED/MODIFIED/REMOVED requirements with WHEN/THEN — only this change's
 deltas), optional `design.md`. Then `rx_openspec op: validate, change: <CH>` and fix what it reports.
+
+Size it to the change; don't restate the pseudocode. Fast path (`size: small`): a 3-line proposal and
+one requirement with at most 2 scenarios, no `design.md` — or skip OpenSpec entirely when the change
+adds no durable behaviour worth specifying.
 
 ## 6. Gate — STOP
 

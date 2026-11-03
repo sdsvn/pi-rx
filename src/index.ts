@@ -107,6 +107,7 @@ type RxState = {
   herdr_watch_tab?: string | null; // Herdr tab running the PR-watcher loop; closed at /rx-cleanup
   herdr_watch_pane?: string | null; // the watcher loop's pane (aliveness check for reconciliation)
   design_rev?: number; // count of pseudocode revisions at the approval gate
+  size?: DesignSize | null; // rx_set at /rx-start; picks validatePseudocode's total-bullet cap (absent → small)
   // Where the work came from and what it is, persisted at intake so resume, labels and the PR title never
   // depend on re-reading the ticket: `source` = "text" for a free-text task (else the ticket system),
   // `source_ref` = what the user typed, `title`/`requirement` = the story as fetched (or the text itself).
@@ -417,11 +418,21 @@ export function locateAnchor(content: string, anchor: ReviewAnchor | undefined):
  *  Co-Review's design-doc section keys (Context, Design, Diagrams, Open Questions). */
 const PSEUDO_SECTIONS: Record<string, true> = { context: true, design: true, diagrams: true, "open questions": true };
 
-/** Verify a `.pseudocode.md` will actually render in the review view. Pure; tested in demo().
- *  Hard-fails on: no H1 title; missing/empty `## Context`, `## Design`, or `## Open Questions`;
- *  a `## Diagrams` with no mermaid fence; or ANY heading outside the recognized four (the renderer
- *  drops it). Returns every problem so the human sees exactly what to fix instead of a blank page. */
-export function validatePseudocode(md: string): { ok: boolean; problems: string[] } {
+type DesignSize = "small" | "medium" | "large";
+/** Size limits: the prompts already ask for a short tree, but agents pad it unless something checks. */
+const DESIGN_BULLET_CAP: Record<DesignSize, number> = { small: 8, medium: 16, large: 24 };
+const MAX_BULLET_CHARS = 120;
+const MAX_CONTEXT_CHARS = 300;
+const MAX_CHILDREN = 4;
+const MAX_DEPTH = 3;
+
+/** Verify a `.pseudocode.md` will actually render in the review view, and is short enough to review.
+ *  Pure; tested in demo(). Hard-fails on: no H1 title; missing/empty `## Context`, `## Design`, or
+ *  `## Open Questions`; a `## Diagrams` with no mermaid fence; ANY heading outside the recognized four
+ *  (the renderer drops it); and the size limits (Context length, bullet length, >4 children under a
+ *  non-root node, nesting past L3, total Design bullets over the `size` cap). Returns every problem,
+ *  naming the offending line, so the human sees exactly what to fix. */
+export function validatePseudocode(md: string, size?: DesignSize | null): { ok: boolean; problems: string[] } {
   const problems: string[] = [];
   const lines = md.split("\n");
 
@@ -459,6 +470,39 @@ export function validatePseudocode(md: string): { ok: boolean; problems: string[
   if (!design) problems.push("no '## Design' section — the altitude tree will be empty");
   else if (!design.some((l) => /^[ \t]*-[ \t]+\S/.test(l)))
     problems.push("'## Design' has no '- ' bullets — it must be a nested markdown list (L1→L3)");
+
+  if (context) {
+    const len = context.join(" ").replace(/\s+/g, " ").trim().length;
+    if (len > MAX_CONTEXT_CHARS)
+      problems.push(`'## Context' is ${len} chars (max ${MAX_CONTEXT_CHARS}) — say what changes and why, nothing else`);
+  }
+
+  if (design) {
+    const key: DesignSize = size && size in DESIGN_BULLET_CAP ? size : "small";
+    const cap = DESIGN_BULLET_CAP[key];
+    const stack: { indent: number; children: number; text: string }[] = []; // open ancestors
+    let total = 0;
+    for (const line of design) {
+      const m = line.match(/^([ \t]*)-[ \t]+(\S.*)$/);
+      if (!m) continue;
+      const indent = m[1].replace(/\t/g, "  ").length;
+      const text = m[2].trim();
+      total++;
+      while (stack.length && stack[stack.length - 1].indent >= indent) stack.pop();
+      const depth = stack.length + 1;
+      if (depth > MAX_DEPTH) problems.push(`nested ${depth} levels deep (max ${MAX_DEPTH}): "${text}"`);
+      const parent = stack[stack.length - 1];
+      if (parent && ++parent.children === MAX_CHILDREN + 1)
+        problems.push(`more than ${MAX_CHILDREN} children under "${parent.text}" — merge them or regroup upward`);
+      if (text.length > MAX_BULLET_CHARS)
+        problems.push(`bullet is ${text.length} chars (max ${MAX_BULLET_CHARS}) — cut the reason to one short clause: "${text}"`);
+      stack.push({ indent, children: 0, text });
+    }
+    if (total > cap)
+      problems.push(
+        `'## Design' has ${total} bullets (max ${cap} for size ${key}) — drop unchanged parts, tests, docs, and every bullet the reviewer wouldn't challenge`,
+      );
+  }
 
   const questions = sections.get("open questions");
   if (!questions) problems.push("no '## Open Questions' section — include it even when the answer is '- None.'");
@@ -1717,7 +1761,7 @@ export default async function piRx(pi: ExtensionAPI) {
       } catch {
         return { content: [{ type: "text", text: `rx: pseudocode artifact not found: ${artifact}` }], isError: true };
       }
-      const r = validatePseudocode(md);
+      const r = validatePseudocode(md, st.size);
       const text = r.ok
         ? `pseudocode OK — ${path.basename(artifact)} renders as tree + diagrams in the review view.`
         : `pseudocode WILL NOT RENDER — fix before the gate:\n` + r.problems.map((p) => `  • ${p}`).join("\n");
@@ -3143,7 +3187,7 @@ export default async function piRx(pi: ExtensionAPI) {
     // Strict structure gate: the review renderer shows only Context/Design/Diagrams/Open Questions
     // and drops everything else, so a non-conforming artifact renders blank. Refuse to host it and
     // tell the human (and the agent) exactly what to fix, rather than open an empty page.
-    const structure = validatePseudocode(fs.readFileSync(artifact, "utf8"));
+    const structure = validatePseudocode(fs.readFileSync(artifact, "utf8"), st.size);
     if (!structure.ok) {
       const detail = structure.problems.map((p) => `  • ${p}`).join("\n");
       if (ctx.hasUI) ctx.ui.notify(`rx-review: ${ticket} pseudocode won't render — fix its structure`, "error");
@@ -3416,6 +3460,17 @@ export function demo() {
     bad.push("pseudocode: a parenthetical suffix on Design must fail (renderer drops it)");
   if (validatePseudocode("# X\n\n## Context\np\n\n## Design\n- a\n\n## Diagrams\nno fence here\n\n## Open Questions\n- None.\n").ok)
     bad.push("pseudocode: Diagrams without a mermaid fence must fail");
+  const sized = (design: string, context = "p") => validatePseudocode(`# X\n\n## Context\n${context}\n\n## Design\n${design}\n## Open Questions\n- None.\n`);
+  if (sized("- a\n  - b\n    - c\n      - d\n").ok) bad.push("pseudocode: nesting past L3 must fail");
+  if (sized("- a\n" + "  - b\n".repeat(5)).ok) bad.push("pseudocode: 5 children under one node must fail");
+  if (!sized("- a\n".repeat(5)).ok) bad.push("pseudocode: the root may hold more than 4 steps");
+  if (sized(`- ${"x".repeat(121)}\n`).ok) bad.push("pseudocode: a bullet over 120 chars must fail");
+  if (sized("- a\n", "x".repeat(301)).ok) bad.push("pseudocode: Context over 300 chars must fail");
+  if (sized("- a\n".repeat(9)).ok) bad.push("pseudocode: 9 bullets must fail the default (small) cap");
+  if (!validatePseudocode(`# X\n\n## Context\np\n\n## Design\n${"- a\n".repeat(9)}\n## Open Questions\n- None.\n`, "medium").ok)
+    bad.push("pseudocode: size medium must allow 9 bullets");
+  const deep = sized("- a\n  - b\n    - c\n      - d\n").problems.join(" ");
+  if (!deep.includes('"d"')) bad.push("pseudocode: a size problem must name the offending line");
 
   // readStates: skip Co-Review state sidecars and any non-state json, so the panel never renders an
   // "rx undefined" row (regression: <ticket>.review.json was being read as a pipeline).

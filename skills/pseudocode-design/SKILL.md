@@ -96,7 +96,15 @@ scans it at a glance:
   regroup upward. If two bullets say the obvious, merge them or cut one.
 - **One step per bullet**, a short phrase. A bullet needing a paragraph is hiding a sublist — expand it instead.
 - **Branches and loops in plain words**: `if large →`, `for each page →`, `on failure →`. No uppercase keywords, no language syntax.
-- **Reasoning rides after an em dash**, on the same line: `respond 200` — don't make the provider retry a parse bug. Never nest prose as its own bullet.
+- **Reasoning rides after an em dash**, on the same line: `respond 200` — no retry on parse bugs. One short
+  clause, and only when the reason isn't obvious. Never nest prose as its own bullet.
+- **Write it like a lazy developer** — only what's necessary. List only behaviour that changes; leave out
+  unchanged parts, tests (they live in the test plan) and docs (the OpenSpec proposal lists affected files).
+  Keep a `✎`/`⚠` bullet only if the reviewer could reject the design because of it; cut every bullet the
+  reviewer wouldn't challenge.
+- **Size limits the validator checks:** each bullet ≤120 chars, nesting ≤3 levels, ≤4 children under
+  any non-root node, `## Context` ≤300 chars, and `## Design` ≤8 bullets (16 / 24 when the ticket's
+  `size` is `medium` / `large`).
 - **Altitude tags** (`**L2** · ingest`) only when showing an isolated zoom in conversation; in the
   artifact's single list, depth already says it.
 
@@ -118,8 +126,8 @@ two trivial steps stay one line each; only the step hiding decisions grew a subl
 - a pharmacy event arrives
   - make sure it really came from the pharmacy — ignore anything we can't trust
   - record that we received it
-    - `✎` store in `webhook_events` — new table; a RECEIVED event, not final state; `external_event_id` unique → dedupes resends
-    - duplicate or malformed → accept anyway (store raw + flag) — never make the pharmacy retry over a parse bug
+    - `✎` store in new table `webhook_events` — `external_event_id` unique → dedupes resends
+    - duplicate or malformed → accept anyway (store raw + flag) — no retry over a parse bug
     - database unavailable → respond `503` — `⚠` only case we let the pharmacy retry
   - acknowledge receipt so the pharmacy stops resending
 - later, match the event to a prescription — `?` matching key still open (Q1)

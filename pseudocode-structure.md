@@ -34,6 +34,9 @@ structural contract the tooling verifies.
   content INLINE into the Design list as `✎`/`?`/`⚠` bullets — never a far-away `## Files` / `## RBAC` /
   `## Migration` section.
 - **`## Diagrams`, if present, contains a ` ```mermaid ` block** — otherwise the section renders nothing.
+- **Size limits** — `## Context` ≤300 chars; each Design bullet ≤120 chars; nesting ≤3 levels; ≤4
+  children under any non-root node; total Design bullets ≤8, or 16 / 24 when the ticket's `size`
+  (set via `rx_set`) is `medium` / `large`. Each failure names the offending line.
 
 ## Why decisions go inline, not in their own sections
 
