@@ -1,6 +1,6 @@
 {
   "name": "pi-rx",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Ticket in, merged PR out: a gated, test-plan-first workflow for omp and pi coding agents.",
   "keywords": [
     "pi-package",
