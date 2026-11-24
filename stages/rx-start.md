@@ -8,8 +8,6 @@ write implementation code. `$1` is the canonical ticket or task id (Linear `ENG-
 `add-retry-webhook-sender`); `$2` is the free-text requirement/note. State is owned by the plugin:
 read/mutate ONLY via the `rx_*` tools; bash is for real work (`git`, `gh`, `openspec`).
 
-Announce: "Starting pipeline for `$1`."
-
 ## 0. Guard
 
 `rx_status` with `ticket: $1`.
@@ -106,8 +104,7 @@ adds no durable behaviour worth specifying.
 ## 6. Gate — STOP
 
 `rx_transition to: awaiting-approval`, then `rx_review_open ticket: $1` (Co-Review, or the HTML page when
-it isn't installed — relay its result line, including any install recommendation). Show `rx_status`.
-Tell the user the review is open; approve → `/rx-approve $1`; push back → `/rx-reject $1 "..."`.
+it isn't installed — relay its result line). One status line: review open → `/rx-approve $1` or `/rx-reject $1 "..."`.
 
 Arm the idle nudge with the tool literally named `notify_if_idle` (afterIdleSec 300, wait true,
 timeoutSec 1800, message "Approve $1? Reply 'approve' or 'reject <notes>'."). **Never `notify_device`

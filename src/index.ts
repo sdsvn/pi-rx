@@ -2564,6 +2564,21 @@ export default async function piRx(pi: ExtensionAPI) {
   // or ~/.claude/workflow. Bundled assets the playbooks read (workflow/*.md) resolve via $RX_PLUGIN.
   const PLUGIN_ROOT = PLUGIN_DIR;
   const STAGES_DIR = path.join(PLUGIN_ROOT, "stages");
+  /** How every stage talks to the user. Appended last so it governs all output. */
+  const OUTPUT_RULE = `
+
+## Writing to the user
+
+1. Each sentence is a fact, decision, risk or question — else cut it.
+2. Answer first.
+3. Highest level, business language: what happens and why. Code names, files and detail only when asked.
+4. Plain words; numbers only when they change what the user would do.
+5. Never restate, recap, preview, explain the pipeline, or echo tool output / state.
+6. Explain a choice only when the user might disagree.
+7. Status: one line. Stage report: at most 3 lines.
+8. Every question carries one recommendation.
+`;
+
   function dispatch(cmd: string, ticket: string, note: string) {
     if (ticket) {
       const cwd = ui?.cwd || process.cwd();
@@ -2585,7 +2600,7 @@ export default async function piRx(pi: ExtensionAPI) {
     body = body.replaceAll("$RX_PLUGIN", PLUGIN_ROOT).replaceAll("$1", ticket).replaceAll("$2", note);
     // Last, so ticket text in the source prompt is never touched by the $1/$2 substitution above.
     if (cmd === "start") body = body.replaceAll("$RX_SOURCE", sourcePrompt(ticket, ui?.cwd || process.cwd()));
-    pi.sendUserMessage(body);
+    pi.sendUserMessage(body + OUTPUT_RULE);
     return true;
   }
 

@@ -53,6 +53,6 @@ Resumed here from `approved`? Re-run the §1 cwd check first — it does not car
 
 ## 4. Done
 
-`rx_transition to: implemented`; show `rx_status`. Implementation diverged from the approved tree →
+`rx_transition to: implemented`. Implementation diverged from the approved tree →
 `rx_deviation` (`auto`/`contract-drift`, tree-said-X vs code-required-Y, with reasoning). Then the
-same self-report pass as `/rx-start` §7. Tell the user: run `/rx-pr $1`.
+same self-report pass as `/rx-start` §7. One status line: next `/rx-pr $1`.

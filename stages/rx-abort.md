@@ -28,6 +28,6 @@ continue (teardown's branch delete closes it anyway).
 
 `rx_teardown` with `ticket: $1` (idempotent: watcher, worktree, branches, artifacts; state file stays
 as audit record; an OpenSpec draft stays unarchived). Then `rx_transition to: aborted, note:` the
-reason, `rx_log event: "abort"` with what was removed, and show `rx_status`.
+reason, `rx_log event: "abort"` with what was removed.
 
 Report: pipeline `$1` aborted at `<phase>`, runtime torn down.

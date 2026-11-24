@@ -41,5 +41,4 @@ explicit ask, and say you're overriding.
 
 ## 4. Report
 
-Show `rx_status`. Tell the user: PR `#<PR>` open, watcher running (pings via `notify_device` only on
-a genuine decision); after merge run `/rx-cleanup $1`.
+One status line: PR `#<PR>` open, watcher running; after merge `/rx-cleanup $1`.

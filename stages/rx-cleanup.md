@@ -20,6 +20,6 @@ baseline). Empty → skip.
 
 `rx_teardown` with `ticket: $1` (watcher, worktree, branches, artifacts; state file stays as audit
 record). Then `rx_transition to: cleaned, note: "PR #<pr_number> merged; torn down"` (self-hosted:
-`"self-hosted merge to local main; torn down"`), `rx_log event: "cleanup"`, and show `rx_status`.
+`"self-hosted merge to local main; torn down"`), `rx_log event: "cleanup"`.
 
 Report: pipeline `$1` complete — merged, cleaned, watcher stopped.
