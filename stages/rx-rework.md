@@ -28,5 +28,5 @@ canonical artifacts the comments touch:
 ## 3. Back to the gate
 
 Call `rx_review_open ticket: $1` to open the re-review on the updated design (relay its result line),
-then present the updated design and STOP. Human re-reviews: `/rx-approve $1` → implement → `/rx-pr $1`
+then present ONLY what this rework changed in the design (not the whole tree) and STOP. Human re-reviews: `/rx-approve $1` → implement → `/rx-pr $1`
 pushes to the existing PR; `/rx-reject $1 "..."` works as usual.

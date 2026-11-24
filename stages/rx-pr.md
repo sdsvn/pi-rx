@@ -11,8 +11,8 @@ bash for real work (git, `gh`); OpenSpec only via `rx_openspec` (it adds `--stor
 `details.state.worktree`.
 
 **Rework round** (`pr_number` set, or `self_delivered` true): skip §2 — call `rx_pr` with a one-line
-`comment` summarizing the change (it pushes + comments / self-hosted re-merges, returns to
-`pr-open`), `rx_log event: "pr-update"`, then go to §3.
+`comment` describing ONLY this rework (what the review asked → what changed), never the whole change
+(it pushes + comments / self-hosted re-merges, returns to `pr-open`), `rx_log event: "pr-update"`, then go to §3.
 
 ## 2. PR body + open
 
