@@ -1912,8 +1912,8 @@ export default async function piRx(pi: ExtensionAPI) {
       // The pseudocode artifact lives ONLY in the ticket's canonical artifacts dir — never in the
       // repo tree, never in an invented dir (both happened; the gate then reviewed the wrong draft).
       if (typeof params.fields.pseudocode === "string") {
-        const root = path.dirname(artifactsDir(dir, params.ticket)) + path.sep; // artifacts/<repo-key>/
-        if (!path.resolve(params.fields.pseudocode).startsWith(root))
+        const want = artifactsDir(dir, params.ticket) + path.sep; // per-ticket dir: a shared dir lets Co-Review open the wrong ticket's doc
+        if (!path.resolve(params.fields.pseudocode).startsWith(want))
           return { content: [{ type: "text", text: `rx: pseudocode must be an absolute path under ${artifactsDir(dir, params.ticket)}/ — never inside the repo tree.` }], isError: true };
       }
       const s = setFields(dir, params.ticket, params.fields);
@@ -2599,6 +2599,7 @@ export default async function piRx(pi: ExtensionAPI) {
 `;
 
   function dispatch(cmd: string, ticket: string, note: string) {
+    note = note.trim().replace(/^"([^"]*)"$/, "$1"); // the usage line says to quote the note; drop a clean quote pair
     // reject/rework need the human's reason. Enforced HERE: a prompt line like "`$2` empty → stop"
     // reads as an assertion once the note is spliced in ("`address comments` empty → stop") and the
     // model obeys it even when the note was given.
@@ -3298,9 +3299,20 @@ export default async function piRx(pi: ExtensionAPI) {
       return `rx-review refused: ${ticket} still points at a retired PRP path`;
     }
     bindSession(dir, ticket, ctx); // the design-gate session is the one worth resuming later
-    const artifact = path.isAbsolute(st.pseudocode)
+    let artifact = path.isAbsolute(st.pseudocode)
       ? st.pseudocode
       : path.join(st.worktree || repoRoot(ctx.cwd || process.cwd()) || "", st.pseudocode);
+    // Legacy flat layout / repo-local strays: Co-Review opens the artifact's whole DIR, so a dir
+    // shared with other tickets' docs can show the wrong design (ENG-6840's review displayed
+    // ENG-6562's). Migrate the doc (+ its approved snapshot) into the per-ticket dir once.
+    const canon = artifactsDir(dir, ticket);
+    if (fs.existsSync(artifact) && path.dirname(artifact) !== canon) {
+      fs.mkdirSync(canon, { recursive: true });
+      for (const f of [artifact, artifact.replace(/\.md$/, ".approved.md")])
+        if (fs.existsSync(f)) fs.copyFileSync(f, path.join(canon, path.basename(f)));
+      artifact = path.join(canon, path.basename(artifact));
+      patchState(dir, ticket, { pseudocode: artifact });
+    }
 
     // Strict structure gate: the review renderer shows only Context/Design/Diagrams/Open Questions
     // and drops everything else, so a non-conforming artifact renders blank. Refuse to host it and
