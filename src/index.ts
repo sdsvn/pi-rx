@@ -1807,6 +1807,18 @@ export default async function piRx(pi: ExtensionAPI) {
       const dir = repoStateDir(ctx.cwd || process.cwd());
       if (!dir) return { content: [{ type: "text", text: "rx: not inside a git repo." }], isError: true };
       const before = readStates(dir).find((s) => s.ticket === params.ticket)?.phase;
+      // Gate guard: the design gate is only reachable with a conforming artifact in the canonical
+      // artifacts dir — even when the agent bypasses rx_review_open (BOOM-1540: a flat, over-long
+      // draft in a hallucinated dir was reviewed because nothing validated at the transition).
+      if (params.to === "awaiting-approval") {
+        const st = readStates(dir).find((s) => s.ticket === params.ticket);
+        const bad = (msg: string) => ({ content: [{ type: "text" as const, text: `rx: refusing '${params.to}' — ${msg}` }], isError: true });
+        if (!st?.pseudocode) return bad(`no pseudocode recorded; write it under ${artifactsDir(dir, params.ticket)} and rx_set {pseudocode} first.`);
+        const artifact = path.isAbsolute(st.pseudocode) ? st.pseudocode : path.join(st.worktree || "", st.pseudocode);
+        if (!fs.existsSync(artifact)) return bad(`pseudocode artifact not found: ${artifact}`);
+        const v = validatePseudocode(fs.readFileSync(artifact, "utf8"), st.size);
+        if (!v.ok) return bad(`the pseudocode doesn't match the render contract:\n${v.problems.map((p) => `  • ${p}`).join("\n")}`);
+      }
       const r = applyTransition(dir, params.ticket, params.to, params.note);
       let text = r.text;
       if (r.ok && params.to === "awaiting-approval" && before !== "awaiting-approval")
@@ -1897,6 +1909,13 @@ export default async function piRx(pi: ExtensionAPI) {
         return { content: [{ type: "text", text: `rx: no pipeline for ${params.ticket}.` }], isError: true };
       if ("phase" in params.fields)
         return { content: [{ type: "text", text: "rx: use rx_transition to change phase, not rx_set." }], isError: true };
+      // The pseudocode artifact lives ONLY in the ticket's canonical artifacts dir — never in the
+      // repo tree, never in an invented dir (both happened; the gate then reviewed the wrong draft).
+      if (typeof params.fields.pseudocode === "string") {
+        const root = path.dirname(artifactsDir(dir, params.ticket)) + path.sep; // artifacts/<repo-key>/
+        if (!path.resolve(params.fields.pseudocode).startsWith(root))
+          return { content: [{ type: "text", text: `rx: pseudocode must be an absolute path under ${artifactsDir(dir, params.ticket)}/ — never inside the repo tree.` }], isError: true };
+      }
       const s = setFields(dir, params.ticket, params.fields);
       return { content: [{ type: "text", text: `rx: set ${Object.keys(params.fields).join(", ")} on ${params.ticket}.` }], details: { state: s } };
     },
