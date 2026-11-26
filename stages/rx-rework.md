@@ -8,8 +8,7 @@ push, reply. State via `rx_*` tools.
 
 ## 1. Gate
 
-`rx_status` with `ticket: $1` — phase must be `pr-open`, else **stop**. `$2` empty → **stop**:
-`rx: describe the rework: /rx-rework $1 "summary"`.
+`rx_status` with `ticket: $1` — phase must be `pr-open`, else **stop**.
 
 Then: `rx_transition to: awaiting-approval, note: $2` (PR stays open), `rx_log event: "rework"`, and
 log the evidence — `rx_deviation` (`auto`/`reworked`, `note: $2`, `context:` what the PR shipped that

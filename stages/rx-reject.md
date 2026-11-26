@@ -7,8 +7,7 @@ never proceed to code from here. State via `rx_*` tools.
 
 ## 1. Gate + record
 
-`rx_status` with `ticket: $1` — phase must be `awaiting-approval`, else **stop**. `$2` empty →
-**stop**: usage `/rx-reject $1 "your objection"`.
+`rx_status` with `ticket: $1` — phase must be `awaiting-approval`, else **stop**.
 
 - `rx_log event: "reject", note: $2`; `cd` into `details.state.worktree`.
 - Ground-truth evidence: `rx_deviation` (`auto`/`rejected`, `note: $2`, `context:` the rejected

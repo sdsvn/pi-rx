@@ -2599,6 +2599,13 @@ export default async function piRx(pi: ExtensionAPI) {
 `;
 
   function dispatch(cmd: string, ticket: string, note: string) {
+    // reject/rework need the human's reason. Enforced HERE: a prompt line like "`$2` empty → stop"
+    // reads as an assertion once the note is spliced in ("`address comments` empty → stop") and the
+    // model obeys it even when the note was given.
+    if ((cmd === "reject" || cmd === "rework") && !note.trim()) {
+      if (ui?.hasUI) ui.ui.notify(`rx: describe the ${cmd}: /rx-${cmd} ${ticket || "<ticket>"} "summary"`, "error");
+      return true;
+    }
     if (ticket) {
       const cwd = ui?.cwd || process.cwd();
       const dir = repoStateDir(cwd);
