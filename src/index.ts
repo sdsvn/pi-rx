@@ -740,41 +740,46 @@ function snapshotApprovedDesign(st: RxState): void {
     if (!cur || !fs.existsSync(cur)) return;
     const d = path.dirname(cur);
     fs.copyFileSync(cur, path.join(d, `${st.ticket}.pseudocode.approved.md`));
-    fs.rmSync(path.join(d, `${st.ticket}.design-changes.diff`), { force: true });
-    fs.rmSync(path.join(d, `${st.ticket}.design-changes.md`), { force: true });
+    // A new baseline: diffs dropped for the review it ends are moot (the next re-review gets a fresh dir).
+    for (const f of fs.readdirSync(d)) if (/\.(diff|patch)$/.test(f)) fs.rmSync(path.join(d, f), { force: true });
   } catch {
     /* best-effort */
   }
 }
 
-/** Refresh the "design changes since approved" delta in the review dir (the dir holding `artifact`):
- *  a unified diff of the approved baseline → the current pseudocode, plus a titled sidecar so the review
- *  server labels the tab. Removes both when there's no baseline (never approved) or no change, so the
- *  reviewer sees a delta tab ONLY when the design actually moved on top of what they approved. */
-function refreshDesignDelta(artifact: string, ticket: string, designRev: number): void {
+/** The re-review dir `<artifact dir>/changes-<n>/` (n = approvals so far): once a design is approved, its
+ *  re-review shows ONLY what moved since — `<ticket>.design-changes.diff` (approved → current with no
+ *  unchanged lines; each hunk header names its `## ` section) plus copies of the `*.diff`/`*.patch` a rework
+ *  dropped in the artifact dir — never the whole design again. A fresh dir per approval is a fresh Co-Review
+ *  review (Co-Review keys reviews by dir), so an earlier round's threads never come back. Returns null when
+ *  there's no approved baseline (the first review is the whole plan). */
+function refreshDesignDelta(artifact: string, st: RxState): string | null {
+  const d = path.dirname(artifact);
+  const approved = path.join(d, `${st.ticket}.pseudocode.approved.md`);
+  if (!fs.existsSync(artifact) || !fs.existsSync(approved)) return null;
   try {
-    if (!fs.existsSync(artifact)) return;
-    const d = path.dirname(artifact);
-    const approved = path.join(d, `${ticket}.pseudocode.approved.md`);
-    const diffPath = path.join(d, `${ticket}.design-changes.diff`);
-    const sidecar = path.join(d, `${ticket}.design-changes.md`);
-    const clear = () => {
-      fs.rmSync(diffPath, { force: true });
-      fs.rmSync(sidecar, { force: true });
-    };
-    if (!fs.existsSync(approved)) return clear(); // never approved → the plan itself is the whole review
+    const changes = path.join(d, `changes-${(st.log ?? []).filter((e) => e.event === "phase:approved").length}`);
+    const diffPath = path.join(changes, `${st.ticket}.design-changes.diff`);
+    const sidecar = path.join(changes, `${st.ticket}.design-changes.md`);
+    fs.mkdirSync(changes, { recursive: true });
+    for (const f of fs.readdirSync(d)) if (/\.(diff|patch)$/.test(f)) fs.copyFileSync(path.join(d, f), path.join(changes, f));
     let out = "";
     try {
-      out = execFileSync("diff", ["-u", "-L", `a/${ticket}.design.md`, "-L", `b/${ticket}.design.md`, approved, artifact], { encoding: "utf8" });
+      out = execFileSync("diff", ["-U0", "-F", "^## ", "-L", `a/${st.ticket}.design.md`, "-L", `b/${st.ticket}.design.md`, approved, artifact], { encoding: "utf8" });
     } catch (e) {
       // diff exits 1 when files differ — its stdout IS the unified diff payload, not an error.
       if (e && typeof e === "object" && "stdout" in e && e.stdout != null) out = String(e.stdout);
     }
-    if (!out.trim()) return clear(); // identical → nothing to show
-    fs.writeFileSync(diffPath, out);
-    fs.writeFileSync(sidecar, `title: Design changes since approved (rev ${designRev})\n`);
+    if (out.trim()) {
+      fs.writeFileSync(diffPath, out);
+      fs.writeFileSync(sidecar, `title: Design changes since approved (rev ${st.design_rev ?? 0})\n`);
+    } else {
+      fs.rmSync(diffPath, { force: true }); // identical → nothing to show
+      fs.rmSync(sidecar, { force: true });
+    }
+    return changes;
   } catch {
-    /* best-effort */
+    return null; // best-effort: fall back to reviewing the whole doc
   }
 }
 
@@ -1525,7 +1530,7 @@ export default async function piRx(pi: ExtensionAPI) {
   let panelOn = true;
   // The open Co-Review review: its MCP session, ticket, review id and state file. `reviewGen` stops a
   // superseded await_reviewer loop (bumped on every teardown).
-  let reviewInfo: { ticket: string; reviewId: string; store: string; conn: CoReview } | null = null;
+  let reviewInfo: { ticket: string; reviewId: string; store: string; conn: CoReview; unwatch: () => void } | null = null;
   let reviewGen = 0;
   // The HTML fallback review (no Co-Review installed): the pseudocode-design live page + its server.
   let htmlReview: { ticket: string; url: string; stop: () => void } | null = null;
@@ -1535,6 +1540,7 @@ export default async function piRx(pi: ExtensionAPI) {
   function stopReview() {
     reviewGen++;
     reviewInfo?.conn.close();
+    reviewInfo?.unwatch();
     reviewInfo = null;
     htmlReview?.stop();
     htmlReview = null;
@@ -1607,7 +1613,7 @@ export default async function piRx(pi: ExtensionAPI) {
     if (to === "approved" && r.state) {
       snapshotApprovedDesign(r.state); // baseline for future design-delta diffs
       // This review round is finished. Drop the review binding, its state file and the delivery cursors
-      // so a re-review after /rx-rework opens the reworked design (with the design-changes diff) from a
+      // so a re-review after /rx-rework opens only the design changes since this approval, from a
       // clean cursor rather than replaying the previous round's comments/approve state.
       try {
         fs.rmSync(path.join(dir, `${ticket}.review.json`), { force: true });
@@ -3344,12 +3350,13 @@ export default async function piRx(pi: ExtensionAPI) {
     }
     const declared = declareDesignDoc(md);
     if (declared !== md) fs.writeFileSync(artifact, declared);
-    // Re-review? Surface WHAT CHANGED on top of the approved design as a diff tab beside the plan.
-    refreshDesignDelta(artifact, ticket, st.design_rev ?? 0);
+    // Re-review after an approval? Co-Review opens only the delta dir (design changes since approved),
+    // never the whole design again.
+    const changes = refreshDesignDelta(artifact, st);
     const store = path.join(dir, `${ticket}.review.json`);
     // The review UI is Co-Review (github.com/sdsvn/co-review), driven over its MCP tools through
-    // `co-review mcp <repo>`: open_review shows the whole disposable artifact dir (pseudocode doc +
-    // any *.diff), await_reviewer waits for comments and the Submit, reply answers in a thread.
+    // `co-review mcp <repo>`: open_review shows a review dir (the artifact dir: pseudocode doc + any *.diff;
+    // or the delta dir), await_reviewer waits for comments and the Submit, reply answers in a thread.
     // Co-Review also writes the review state to `store` (read by rx_status / readReviewState).
     const root = st.worktree || repoRoot(ctx.cwd || process.cwd()) || ctx.cwd || process.cwd();
     const osDir = st.openspec_change
@@ -3368,7 +3375,7 @@ export default async function piRx(pi: ExtensionAPI) {
       if (st.review_id) opened = await conn.call<Opened>("open_review", { reviewId: st.review_id }).catch(() => null);
       opened ??= await conn.call<Opened>("open_review", {
         root,
-        dir: path.dirname(artifact),
+        dir: changes ?? path.dirname(artifact),
         title: `${ticket} design`,
         storePath: store,
         ...(osDir && fs.existsSync(osDir) ? { openspec: osDir } : {}),
@@ -3386,7 +3393,12 @@ export default async function piRx(pi: ExtensionAPI) {
       review_store: store,
       ...(reviewId !== st.review_id ? { review_delivered: [], review_round: 0 } : {}),
     });
-    reviewInfo = { ticket, reviewId, store, conn };
+    // Keep the delta current while the agent folds comments into the pseudocode.
+    const onEdit = (cur: fs.Stats, prev: fs.Stats) => {
+      if (cur.mtimeMs !== prev.mtimeMs) refreshDesignDelta(artifact, st);
+    };
+    if (changes) fs.watchFile(artifact, { interval: 1000 }, onEdit);
+    reviewInfo = { ticket, reviewId, store, conn, unwatch: () => fs.unwatchFile(artifact, onEdit) };
     // Co-Review's own checks on the declared doc go back to the agent in the result: the stage fixes them
     // and Co-Review re-reads the doc on save.
     const warnings = opened.format?.warnings ?? [];
@@ -3868,6 +3880,25 @@ export function demo() {
     withStateLock(sp, () => undefined);
     if (Date.now() - t0 > 1000) bad.push("withStateLock: a stale lock must be broken immediately");
     if (fs.existsSync(lk)) bad.push("withStateLock: broken stale lock must end released");
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // refreshDesignDelta — a re-review gets its own dir holding only what changed since approval.
+  {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "rx-delta-"));
+    const art = path.join(tmp, "ENG-1.pseudocode.md");
+    fs.writeFileSync(art, "# X\n\n## Design\n- keep\n- old\n");
+    const dst = { ticket: "ENG-1", design_rev: 1, log: [{ at: "", event: "phase:approved", note: "" }] } as unknown as RxState;
+    if (refreshDesignDelta(art, dst) !== null) bad.push("refreshDesignDelta: never approved → no delta dir");
+    fs.copyFileSync(art, path.join(tmp, "ENG-1.pseudocode.approved.md"));
+    fs.writeFileSync(art, "# X\n\n## Design\n- keep\n- new\n");
+    fs.writeFileSync(path.join(tmp, "extra.diff"), "x");
+    const dd = refreshDesignDelta(art, dst);
+    const diff = dd ? fs.readFileSync(path.join(dd, "ENG-1.design-changes.diff"), "utf8") : "";
+    if (dd !== path.join(tmp, "changes-1") || !diff.includes("+- new") || !diff.includes("-- old") || diff.includes("keep"))
+      bad.push("refreshDesignDelta: the delta dir holds only the changed lines, never unchanged ones");
+    if (dd && fs.readdirSync(dd).some((f) => f.endsWith(".pseudocode.md"))) bad.push("refreshDesignDelta: the delta dir must not hold the design doc");
+    if (dd && !fs.existsSync(path.join(dd, "extra.diff"))) bad.push("refreshDesignDelta: a rework's dropped diff joins the delta dir");
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 

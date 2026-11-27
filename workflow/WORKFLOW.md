@@ -61,7 +61,8 @@ Deterministic **Linear-ticket (or ad-hoc task) → merged PR** pipeline, with a 
   PRP); **OpenSpec deltas** = the durable *what* (personal out-of-repo store).
 - **Everything is out-of-repo**, namespaced per repo-key: state `~/.claude/workflow/state/<key>/`,
   disposable per-ticket artifacts `~/.claude/workflow/artifacts/<key>/<ticket>/` (the `*.pseudocode.md`
-  design doc + any `*.diff` Co-Review shows), OpenSpec `~/.claude/workflow/openspec/<key>/`.
+  design doc + any `*.diff` Co-Review shows; after an approval, a re-review opens a fresh `changes-<n>/`
+  subdir instead: the design changes since approved, no unchanged lines), OpenSpec `~/.claude/workflow/openspec/<key>/`.
   Nothing lands in the project tree.
 - **Review**: the stages open it at the gate with `rx_review_open` (tool form of `/rx-review`); it opens the artifact dir in **Co-Review** (github.com/sdsvn/co-review) through its MCP
   tools (`co-review mcp`): `open_review`, then an `await_reviewer` loop delivers comments and turns the Submit

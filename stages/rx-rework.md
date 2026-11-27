@@ -20,7 +20,7 @@ Work in `details.state.worktree`. Re-read the PR comments (`gh pr view <pr_numbe
 `$2`. Unfamiliar code → re-ground via the repo's maps first (`okf/`, `skill://graphify`). Update the
 canonical artifacts the comments touch:
 - the pseudocode tree (`details.state.pseudocode`) and/or test plan; optionally drop a `*.diff` in
-  the artifacts dir.
+  the artifacts dir (the re-review shows it beside the design changes since approved, never the whole design).
 - requirement changes with an OpenSpec change → update its deltas, then `rx_openspec op: validate`.
 - a standing process objection → `rx_decision`.
 
