@@ -163,6 +163,8 @@ Rules:
 - **No decoration.** A linear flow, or anything ≤ 3 nodes, never gets a diagram — a list already
   shows it. A diagram must reveal structure the list can't, or it's noise.
 - Diagrams live in the artifact's **Diagrams** section, right after the list — never scattered.
+- Start each mermaid block with `%% id: <name>` and give nodes explicit ids (`req[Ingest request]`), so a
+  review comment on a diagram, or on one node, still finds it after edits.
 
 Example — the webhook event's lifecycle has a cycle (retrying an unmatched event) a list can't show:
 
@@ -212,7 +214,7 @@ writes it, an error rule is an L3 branch under the step that hits it.
 ## Context         — a short paragraph: the capability, in domain terms
 ## Design          — THE nested list, L1 → L2 (L3 only on risk-carrying branches)
 ## Diagrams        — only if the shape demands one (state machine, multi-actor); beside, never instead
-## Open Questions  — every `?` from the list, numbered
+## Open Questions  — every `?` from the list, one `- ` item each (so each takes its own review comment)
 ```
 
 If the surrounding workflow/tooling names an exact section contract, follow it verbatim. Otherwise

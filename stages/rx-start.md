@@ -72,7 +72,8 @@ there whether or not the host registered it as a skill). The hierarchical tree I
   changes. Leave out unchanged parts, tests (they're in `test_plan`) and docs (OpenSpec Impact lists
   affected files). A reason after an em dash is one short clause, and only when it isn't obvious.
   Keep a `✎`/`⚠` bullet only if the reviewer could reject the design because of it.
-- Reachability / only-path claims cite the proving `file:line`, verified before the gate.
+- Reachability / only-path claims: verify the proving `file:line` before the gate, but write the claim
+  in words in the doc (name the module or function) — the reviewer reads prose, and Co-Review flags line references.
 - **Design the laziest solution that works.** Climb, stop at the first rung that holds: need to
   exist at all (YAGNI)? → existing helper/pattern in THIS repo? → stdlib? → native platform / DB
   constraint over app code? → already-installed dep? → one line? → only then new minimal code. No
@@ -104,7 +105,8 @@ adds no durable behaviour worth specifying.
 ## 6. Gate — STOP
 
 `rx_transition to: awaiting-approval`, then `rx_review_open ticket: $1` (Co-Review, or the HTML page when
-it isn't installed — relay its result line). One status line: review open → `/rx-approve $1` or `/rx-reject $1 "..."`.
+it isn't installed — relay its result line). It lists any Co-Review format warnings: fix each in the pseudocode
+(the review re-reads it). One status line: review open → `/rx-approve $1` or `/rx-reject $1 "..."`.
 
 Arm the idle nudge with the tool literally named `notify_if_idle` (afterIdleSec 300, wait true,
 timeoutSec 1800, message "Approve $1? Reply 'approve' or 'reject <notes>'."). **Never `notify_device`

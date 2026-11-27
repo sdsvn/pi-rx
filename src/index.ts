@@ -411,11 +411,11 @@ export function locateAnchor(content: string, anchor: ReviewAnchor | undefined):
   return { start: start + 1, end: end + 1 };
 }
 
-/** The four `## ` sections the review renderer (Co-Review's design-doc format) recognizes, matched on
- *  the EXACT lowercased heading. Anything else — a different heading, a parenthetical suffix
- *  (`## Design (notes)` !== `design`) — is SILENTLY DROPPED along with the prose/mermaid beneath it,
- *  so a non-conforming artifact renders as an empty tree with no diagrams. Keep in lockstep with
- *  Co-Review's design-doc section keys (Context, Design, Diagrams, Open Questions). */
+/** The `## ` sections a Rx design may use: the subset of Co-Review's design-doc contract (its
+ *  docs/design-docs.md: Context, Design, Alternatives, Behaviour, Diagrams, Open Questions) that the HTML
+ *  fallback page also renders. Matched on the EXACT lowercased heading. Anything else — another heading,
+ *  a parenthetical suffix (`## Design (notes)` !== `design`) — the HTML page drops and Co-Review shows only
+ *  as plain Markdown away from the step tree, so Rx folds such content inline into the Design list. */
 const PSEUDO_SECTIONS: Record<string, true> = { context: true, design: true, diagrams: true, "open questions": true };
 
 type DesignSize = "small" | "medium" | "large";
@@ -428,8 +428,8 @@ const MAX_DEPTH = 3;
 
 /** Verify a `.pseudocode.md` will actually render in the review view, and is short enough to review.
  *  Pure; tested in demo(). Hard-fails on: no H1 title; missing/empty `## Context`, `## Design`, or
- *  `## Open Questions`; a `## Diagrams` with no mermaid fence; ANY heading outside the recognized four
- *  (the renderer drops it); and the size limits (Context length, bullet length, >4 children under a
+ *  `## Open Questions`; a `## Diagrams` with no mermaid fence; ANY heading outside the four (the HTML
+ *  page drops it, Co-Review shows it outside the tree); and the size limits (Context length, bullet length, >4 children under a
  *  non-root node, nesting past L3, total Design bullets over the `size` cap). Returns every problem,
  *  naming the offending line, so the human sees exactly what to fix. */
 export function validatePseudocode(md: string, size?: DesignSize | null): { ok: boolean; problems: string[] } {
@@ -457,7 +457,7 @@ export function validatePseudocode(md: string, size?: DesignSize | null): { ok: 
 
   if (unknown.length)
     problems.push(
-      "section(s) the renderer DROPS (it shows only Context/Design/Diagrams/Open Questions, matched exactly): " +
+      "section(s) outside the design contract (only Context/Design/Diagrams/Open Questions, matched exactly; Co-Review shows others as plain Markdown, the HTML review page drops them): " +
         unknown.map((h) => `\"## ${h}\"`).join(", ") +
         " — fold their content INLINE into the Design list (decisions as ✎/?/⚠ bullets) or rename to a recognized section (no parenthetical suffix)",
     );
@@ -514,6 +514,18 @@ export function validatePseudocode(md: string, size?: DesignSize | null): { ok: 
     problems.push("'## Diagrams' present but contains no ```mermaid block");
 
   return { ok: problems.length === 0, problems };
+}
+
+/** Co-Review checks a design doc (structure, order, line references, pasted code, long steps) only when
+ *  its frontmatter declares `co-review: design`; undeclared, it renders leniently and checks nothing. The
+ *  HTML fallback ignores frontmatter, so every artifact is declared. Pure; tested in demo(). */
+export function declareDesignDoc(md: string): string {
+  const lines = md.split("\n");
+  const end = lines[0]?.trim() === "---" ? lines.findIndex((l, i) => i > 0 && l.trim() === "---") : -1;
+  if (end < 0) return `---\nco-review: design\n---\n${md}`;
+  if (lines.slice(1, end).some((l) => /^co-review:\s*design\s*$/i.test(l.trim()))) return md;
+  lines.splice(1, 0, "co-review: design");
+  return lines.join("\n");
 }
 /** POSIX cksum CRC (poly 0x04C11DB7, length appended, final complement) —
  *  must match the system `cksum` binary exactly so repo keys stay stable — demo() guards it. */
@@ -3314,10 +3326,11 @@ export default async function piRx(pi: ExtensionAPI) {
       patchState(dir, ticket, { pseudocode: artifact });
     }
 
-    // Strict structure gate: the review renderer shows only Context/Design/Diagrams/Open Questions
-    // and drops everything else, so a non-conforming artifact renders blank. Refuse to host it and
-    // tell the human (and the agent) exactly what to fix, rather than open an empty page.
-    const structure = validatePseudocode(fs.readFileSync(artifact, "utf8"), st.size);
+    // Strict structure gate: Rx designs use only Context/Design/Diagrams/Open Questions (the HTML page
+    // renders nothing else, Co-Review shows the rest outside the step tree). Refuse to host a
+    // non-conforming artifact and tell the human (and the agent) exactly what to fix.
+    const md = fs.readFileSync(artifact, "utf8");
+    const structure = validatePseudocode(md, st.size);
     if (!structure.ok) {
       const detail = structure.problems.map((p) => `  • ${p}`).join("\n");
       if (ctx.hasUI) ctx.ui.notify(`rx-review: ${ticket} pseudocode won't render — fix its structure`, "error");
@@ -3329,6 +3342,8 @@ export default async function piRx(pi: ExtensionAPI) {
       );
       return `rx-review refused: the pseudocode doesn't match the render contract:\n${detail}`;
     }
+    const declared = declareDesignDoc(md);
+    if (declared !== md) fs.writeFileSync(artifact, declared);
     // Re-review? Surface WHAT CHANGED on top of the approved design as a diff tab beside the plan.
     refreshDesignDelta(artifact, ticket, st.design_rev ?? 0);
     const store = path.join(dir, `${ticket}.review.json`);
@@ -3372,10 +3387,16 @@ export default async function piRx(pi: ExtensionAPI) {
       ...(reviewId !== st.review_id ? { review_delivered: [], review_round: 0 } : {}),
     });
     reviewInfo = { ticket, reviewId, store, conn };
-    if (opened.format?.warnings?.length) pi.logger?.debug?.(`pi-rx: Co-Review format notes for ${ticket}: ${opened.format.warnings.join(" ")}`);
-    if (ctx.hasUI) ctx.ui.notify(`rx-review ${ticket} — open in Co-Review${opened.url ? `: ${opened.url}` : ""}`, "info");
+    // Co-Review's own checks on the declared doc go back to the agent in the result: the stage fixes them
+    // and Co-Review re-reads the doc on save.
+    const warnings = opened.format?.warnings ?? [];
+    const where = `open in Co-Review${opened.url ? ` (${opened.url})` : ""}`;
+    if (ctx.hasUI) ctx.ui.notify(`rx-review ${ticket} — ${where}${warnings.length ? `, ${warnings.length} format warning(s)` : ""}`, "info");
     void watchReview(dir, ticket, reviewId, store, conn, reviewGen);
-    return `rx-review ${ticket}: open in Co-Review${opened.url ? ` (${opened.url})` : ""}`;
+    return (
+      `rx-review ${ticket}: ${where}` +
+      (warnings.length ? `\nCo-Review format warnings — fix each in the pseudocode (the review re-reads it):\n${warnings.map((w) => `  • ${w}`).join("\n")}` : "")
+    );
   }
 
   // rx_review_reply — post an agent reply into a review thread through Co-Review's `reply` tool, so it
@@ -3594,7 +3615,13 @@ export function demo() {
   if (validatePseudocode("# X\n## Goal\n- a\n## Flow charts\n```mermaid\nA-->B\n```\n").ok)
     bad.push("pseudocode: unrecognized sections (Goal/Flow charts) must fail");
   if (validatePseudocode("# X\n\n## Context\np\n\n## Design (notes)\n- a\n\n## Open Questions\n- None.\n").ok)
-    bad.push("pseudocode: a parenthetical suffix on Design must fail (renderer drops it)");
+    bad.push("pseudocode: a parenthetical suffix on Design must fail (outside the contract)");
+  const decl = declareDesignDoc(goodDoc);
+  if (!decl.startsWith("---\nco-review: design\n---\n# Feature") || !validatePseudocode(decl).ok)
+    bad.push("declareDesignDoc: an undeclared doc gets the frontmatter and still validates");
+  if (declareDesignDoc(decl) !== decl) bad.push("declareDesignDoc: an already-declared doc is left alone");
+  if (!declareDesignDoc("---\ntitle: T\n---\n# X\n").startsWith("---\nco-review: design\ntitle: T\n---"))
+    bad.push("declareDesignDoc: existing frontmatter gains the key, not a second block");
   if (validatePseudocode("# X\n\n## Context\np\n\n## Design\n- a\n\n## Diagrams\nno fence here\n\n## Open Questions\n- None.\n").ok)
     bad.push("pseudocode: Diagrams without a mermaid fence must fail");
   const sized = (design: string, context = "p") => validatePseudocode(`# X\n\n## Context\n${context}\n\n## Design\n${design}\n## Open Questions\n- None.\n`);

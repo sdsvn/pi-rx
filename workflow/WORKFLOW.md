@@ -66,6 +66,7 @@ Deterministic **Linear-ticket (or ad-hoc task) → merged PR** pipeline, with a 
 - **Review**: the stages open it at the gate with `rx_review_open` (tool form of `/rx-review`); it opens the artifact dir in **Co-Review** (github.com/sdsvn/co-review) through its MCP
   tools (`co-review mcp`): `open_review`, then an `await_reviewer` loop delivers comments and turns the Submit
   (approve / request changes) into the gate; `rx_review_reply` uses `reply`. Review state lands in `<ticket>.review.json`.
+  The doc gets `co-review: design` frontmatter so Co-Review checks it; its `format.warnings` come back in `rx_review_open`'s result.
   Co-Review not installed → falls back to the pseudocode-design live HTML page (same gate, no reply threads) and recommends installing Co-Review.
 - **Early abort** (`/rx-abort`): abandon a ticket at ANY non-terminal phase (`started`…`pr-open`) →
   terminal `aborted` (distinct from `cleaned` = merged). Confirms, closes an open PR, then `rx_teardown`
